@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jev-tree"
+version = "0.1.0"
+description = "A Jev-native probability-tree and probability-graph runtime for multi-step decisions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+keywords = ["jev", "planning", "decision-tree", "probability-graph", "agents"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Typing :: Typed",
+]
+dependencies = [
+  "typesafe-sdk>=0.7,<1",
+]
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "pytest>=8.0", "pytest-cov>=5.0"]
+game = ["minigrid>=3.0,<4"]
+
+[project.scripts]
+jev-tree = "jevtree.cli:main"
+jev-tree-demo = "jevtree.demo_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jevtree"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

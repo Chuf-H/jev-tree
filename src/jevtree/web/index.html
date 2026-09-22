@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="JevTree：把 Jev 的局部概率判断组合成可执行、可审计的长程联合概率图。">
+  <title>JevTree · Grow decisions, not prose</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #030807;
+      --surface: #07110e;
+      --surface-2: #0a1713;
+      --line: rgba(171, 255, 176, .13);
+      --ink: #eef9ec;
+      --muted: #86a095;
+      --lime: #beff52;
+      --mint: #5effb1;
+      --cyan: #50e8d1;
+      --amber: #ffcc70;
+      --red: #ff7a72;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; background: var(--bg); }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 16% 0%, rgba(94,255,177,.10), transparent 33rem),
+        radial-gradient(circle at 88% 23%, rgba(80,232,209,.07), transparent 38rem),
+        linear-gradient(180deg, #030807 0%, #04100c 55%, #020605 100%);
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; }
+    .shell { width: min(1480px, 100%); margin: auto; padding: 22px 26px 60px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 54px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark {
+      width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid rgba(190,255,82,.42);
+      border-radius: 12px; background: rgba(190,255,82,.06); color: var(--lime); font: 800 13px var(--mono);
+      box-shadow: 0 0 32px rgba(190,255,82,.08), inset 0 0 18px rgba(190,255,82,.04);
+    }
+    .brand strong { display: block; letter-spacing: -.04em; }
+    .brand small { display: block; margin-top: 2px; color: var(--muted); font: 9px var(--mono); letter-spacing: .12em; }
+    .badge {
+      display: flex; align-items: center; gap: 9px; padding: 8px 13px; border: 1px solid var(--line);
+      border-radius: 999px; background: rgba(7,17,14,.72); color: var(--muted); font: 10px var(--mono);
+      backdrop-filter: blur(12px);
+    }
+    .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 15px var(--lime); }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); gap: 48px; align-items: end; margin-bottom: 34px; }
+    .hero > * { min-width: 0; }
+    .eyebrow { color: var(--lime); font: 10px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+    h1 { max-width: 990px; margin: 12px 0 18px; font-size: clamp(42px, 6.4vw, 88px); line-height: .94; letter-spacing: -.068em; font-weight: 780; }
+    h1 em { color: var(--mint); font-style: normal; text-shadow: 0 0 28px rgba(94,255,177,.16); }
+    .hero-copy { max-width: 770px; margin: 0; color: #a8beb4; font-size: clamp(14px, 1.25vw, 18px); line-height: 1.72; }
+    .hero-copy b { color: var(--ink); font-weight: 600; }
+    .claim {
+      padding-left: 23px; border-left: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7;
+    }
+    .claim strong { display: block; margin-bottom: 10px; color: var(--ink); font-size: 15px; letter-spacing: -.02em; }
+    .claim code { color: var(--lime); font-family: var(--mono); font-size: 10px; }
+    .metrics {
+      display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 18px; border: 1px solid var(--line);
+      border-radius: 18px; overflow: hidden; background: rgba(7,17,14,.84); box-shadow: 0 25px 90px rgba(0,0,0,.22);
+    }
+    .metric { min-width: 0; padding: 19px 21px; border-right: 1px solid var(--line); }
+    .metric:last-child { border: 0; }
+    .metric-label { color: var(--muted); font: 9px var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+    .metric-value { margin-top: 6px; font: 760 clamp(25px, 3vw, 42px) var(--mono); letter-spacing: -.075em; }
+    .metric-note { margin-top: 5px; color: #789087; font-size: 10px; line-height: 1.45; }
+    .metric-note .up { color: var(--lime); }
+    .stage {
+      position: relative; width: min(980px, 100%); height: clamp(720px, 86vw, 880px); margin-inline: auto;
+      overflow: hidden; border: 1px solid rgba(164,255,166,.18); border-radius: 24px;
+      background:
+        linear-gradient(rgba(132,255,178,.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(132,255,178,.022) 1px, transparent 1px),
+        radial-gradient(circle at 50% 96%, rgba(94,255,177,.14), transparent 32%),
+        linear-gradient(180deg, rgba(8,24,18,.95), rgba(3,10,8,.98));
+      background-size: 48px 48px, 48px 48px, auto, auto;
+      box-shadow: 0 38px 110px rgba(0,0,0,.35), inset 0 0 90px rgba(94,255,177,.025);
+    }
+    .stage-head {
+      position: relative; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 18px;
+      min-height: 72px; padding: 15px 18px; border-bottom: 1px solid var(--line); background: rgba(4,12,9,.78); backdrop-filter: blur(14px);
+    }
+    .stage-title { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .run-tag { padding: 5px 8px; border: 1px solid rgba(190,255,82,.36); border-radius: 7px; color: var(--lime); background: rgba(190,255,82,.06); font: 9px var(--mono); }
+    .stage-title h2 { margin: 0; font-size: 14px; }
+    .stage-title p { margin: 3px 0 0; color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .btn, .select {
+      min-height: 34px; padding: 0 12px; border: 1px solid rgba(164,255,183,.18); border-radius: 9px;
+      background: rgba(8,22,17,.88); color: #b8cabf; font-size: 10px; cursor: pointer;
+    }
+    .btn:hover, .select:hover { border-color: rgba(190,255,82,.5); }
+    .btn.primary { border-color: rgba(190,255,82,.5); background: var(--lime); color: #0a1305; font-weight: 760; }
+    .timeline { width: 130px; accent-color: var(--lime); }
+    .progress-label { width: 49px; color: var(--muted); font: 9px var(--mono); text-align: right; }
+    .canvas-wrap { position: absolute; inset: 72px 0 0; }
+    #treeCanvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+    .legend {
+      position: absolute; z-index: 4; left: 18px; top: 90px; display: grid; gap: 8px; padding: 12px 13px;
+      border: 1px solid var(--line); border-radius: 12px; background: rgba(3,11,8,.76); backdrop-filter: blur(10px);
+      color: var(--muted); font: 9px var(--mono);
+    }
+    .legend-row { display: flex; align-items: center; gap: 8px; }
+    .swatch { width: 27px; height: 2px; background: rgba(94,255,177,.45); box-shadow: 0 0 8px rgba(94,255,177,.3); }
+    .swatch.policy { height: 3px; background: var(--lime); box-shadow: 0 0 14px var(--lime); }
+    .swatch.dead { background: rgba(151,174,164,.16); box-shadow: none; }
+    .hud {
+      position: absolute; z-index: 4; right: 18px; top: 90px; width: 220px; padding: 13px 14px;
+      border: 1px solid var(--line); border-radius: 12px; background: rgba(3,11,8,.78); backdrop-filter: blur(10px);
+    }
+    .hud-label { color: var(--muted); font: 8px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .hud-value { margin: 4px 0 11px; font: 700 13px var(--mono); }
+    .hud-value:last-child { margin-bottom: 0; }
+    .hud-value.lime { color: var(--lime); }
+    .tree-caption {
+      position: absolute; z-index: 4; left: 18px; bottom: 17px; max-width: 580px; padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 10px; background: rgba(3,11,8,.74); color: #8aa399; font-size: 9px; line-height: 1.55;
+      backdrop-filter: blur(10px);
+    }
+    .tree-caption b { color: #dcebdd; font-weight: 570; }
+    .tooltip {
+      position: fixed; z-index: 50; display: none; pointer-events: none; min-width: 190px; max-width: 280px; padding: 11px 12px;
+      border: 1px solid rgba(190,255,82,.3); border-radius: 10px; background: rgba(2,9,6,.94); box-shadow: 0 16px 50px rgba(0,0,0,.45);
+      color: var(--muted); font: 9px/1.55 var(--mono);
+    }
+    .tooltip strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 10px; }
+    .tooltip b { color: var(--lime); font-weight: 600; }
+    .live-panel {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end;
+      width: min(980px, 100%); margin: 18px auto 0; padding: 18px;
+      border: 1px solid var(--line); border-radius: 17px; background: rgba(7,17,14,.82);
+    }
+    .live-panel h3 { margin: 0 0 5px; font-size: 13px; }
+    .live-panel p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .live-form { display: flex; align-items: center; gap: 8px; }
+    .live-form input { width: 56px; height: 35px; border: 1px solid var(--line); border-radius: 9px; background: #030b08; color: var(--ink); text-align: center; font: 700 13px var(--mono); }
+    .live-status { grid-column: 1 / -1; display: none; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+    .live-status.show { display: block; }
+    .api-state { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--muted); font: 9px var(--mono); }
+    .api-state i { width: 7px; height: 7px; border-radius: 50%; background: #63766d; box-shadow: 0 0 8px rgba(99,118,109,.35); }
+    .api-state.ready i { background: var(--lime); box-shadow: 0 0 10px rgba(190,255,82,.72); }
+    .api-state.error i { background: var(--amber); box-shadow: 0 0 10px rgba(255,204,112,.5); }
+    .method { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 18px; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: rgba(7,17,14,.82); }
+    .method article { padding: 20px; border-right: 1px solid var(--line); }
+    .method article:last-child { border: 0; }
+    .method-num { color: var(--lime); font: 9px var(--mono); letter-spacing: .1em; }
+    .method h3 { margin: 8px 0 7px; font-size: 14px; }
+    .method p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.62; }
+    .formula { margin-top: 10px; color: #c7dacd; font: 9px var(--mono); }
+    .section-grid { display: grid; grid-template-columns: 1.3fr .7fr; gap: 18px; margin-top: 18px; }
+    .card { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: rgba(7,17,14,.84); }
+    .card-head { padding: 17px 19px; border-bottom: 1px solid var(--line); }
+    .card-head h2 { margin: 0; font-size: 14px; }
+    .card-head p { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font: 10px var(--mono); }
+    th, td { padding: 12px 15px; border-bottom: 1px solid rgba(164,255,183,.08); text-align: left; white-space: nowrap; }
+    th { color: #728b80; font-size: 8px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+    tr:last-child td { border: 0; }
+    td strong { color: var(--lime); }
+    .story { padding: 18px 19px; }
+    .story h3 { margin: 0 0 7px; font-size: 12px; }
+    .story p { margin: 0 0 16px; color: #91aa9f; font-size: 10px; line-height: 1.72; }
+    .story p:last-child { margin-bottom: 0; }
+    .caveat { padding: 12px; border: 1px solid rgba(255,204,112,.25); border-radius: 11px; background: rgba(255,204,112,.045); color: #c6b48f; font-size: 9px; line-height: 1.65; }
+    .foot { display: flex; justify-content: space-between; gap: 20px; margin-top: 18px; padding: 0 4px; color: #5f786d; font-size: 9px; line-height: 1.5; }
+    .foot code { font-family: var(--mono); }
+    @media (max-width: 970px) {
+      .hero, .section-grid { grid-template-columns: 1fr; }
+      .claim { padding-left: 0; padding-top: 18px; border-left: 0; border-top: 1px solid var(--line); }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric:nth-child(2) { border-right: 0; }
+      .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .stage { width: 100%; height: 760px; }
+      .method { grid-template-columns: 1fr; }
+      .method article { border-right: 0; border-bottom: 1px solid var(--line); }
+      .hud { width: 188px; }
+    }
+    @media (max-width: 680px) {
+      .shell { padding: 16px 13px 42px; }
+      .topbar { margin-bottom: 38px; }
+      .badge span:last-child { display: none; }
+      .hero { gap: 26px; }
+      h1 { max-width: 100%; font-size: 36px; line-height: .98; letter-spacing: -.055em; word-break: break-all; overflow-wrap: anywhere; }
+      .hero-copy, .claim { word-break: break-all; overflow-wrap: anywhere; }
+      .metric { overflow: hidden; }
+      .metric-label { font-size: 7.5px; letter-spacing: .05em; white-space: normal; word-break: break-all; }
+      .metric-note { font-size: 8.5px; white-space: normal; word-break: break-all; overflow-wrap: anywhere; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric { padding: 15px; }
+      .metric-value { font-size: 27px; }
+      .stage { height: 720px; }
+      .stage-head { align-items: flex-start; flex-direction: column; min-height: 170px; }
+      .controls { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; justify-content: stretch; }
+      .controls .select { grid-column: 1 / -1; min-width: 0; width: 100%; }
+      .controls .btn.primary { grid-column: 1; }
+      .controls .btn:not(.primary) { grid-column: 2; }
+      .timeline { grid-column: 1; width: 100%; }
+      .progress-label { grid-column: 2; align-self: center; }
+      .canvas-wrap { inset: 170px 0 0; }
+      .legend { top: 184px; left: 10px; }
+      .hud { top: 184px; right: 10px; width: 154px; padding: 10px; }
+      .hud-value { font-size: 10px; }
+      .tree-caption { left: 10px; right: 10px; bottom: 10px; }
+      .live-panel { grid-template-columns: 1fr; }
+      .live-form { flex-wrap: wrap; }
+      .live-form input { flex: 1; min-width: 45px; }
+      .foot { flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">JT</div><div><strong>JevTree</strong><small>PROBABILITY GRAPH RUNTIME</small></div></div>
+      <div class="badge"><i class="badge-dot"></i><span id="topStatus">RECORDED · VERIFIED ARTIFACT</span></div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Grow decisions, not prose</div>
+        <h1>让 Jev 不只判断一步。<br>让它长成一棵<em>决策树。</em></h1>
+        <p class="hero-copy">JevTree 把每个节点上的 typed probability judgment 组合成一张可执行的长程概率图：<b>相同状态合并，路径概率相乘，结局质量回传，再从 Pareto 前沿行动。</b>不是生成一段看不见的 CoT，而是把每一步、每条分支和未探索质量都留下来。</p>
+      </div>
+      <aside class="claim">
+        <strong>我们真正推进的边界</strong>
+        Jev 已经擅长快速回答“此刻选哪个”。JevTree 负责把大量局部判断变成长程策略。确定性代码仍管理合法动作、状态转移、终点验证与预算；<code>Jev becomes the decision engine.</code>
+      </aside>
+    </section>
+
+    <section class="stage" aria-label="animated probability tree">
+      <div class="stage-head">
+        <div class="stage-title"><span class="run-tag" id="runTag">RECORDED</span><div><h2 id="taskTitle">Game of 24 · 1 2 3 4</h2><p id="taskSubtitle">4,557 个真实前缀节点 · 3,872 个可验证叶节点 · jev-1.13.0</p></div></div>
+        <div class="controls">
+          <select class="select" id="massMode" aria-label="brightness mode"><option value="mass">亮度：路径概率</option><option value="success">亮度：成功叶质量</option></select>
+          <button class="btn primary" id="playButton">Ⅱ 暂停生长</button>
+          <button class="btn" id="replayButton">↺ 重播</button>
+          <input class="timeline" id="timeline" type="range" min="0" max="1000" value="0" aria-label="tree growth progress">
+          <span class="progress-label" id="progressLabel">0%</span>
+        </div>
+      </div>
+      <div class="canvas-wrap"><canvas id="treeCanvas"></canvas></div>
+      <div class="legend"><div class="legend-row"><i class="swatch policy"></i>推荐策略路径</div><div class="legend-row"><i class="swatch"></i>高概率分支</div><div class="legend-row"><i class="swatch dead"></i>低概率 / 失败分支</div></div>
+      <aside class="hud">
+        <div class="hud-label">nodes grown</div><div class="hud-value lime" id="nodesGrown">0 / 4,557</div>
+        <div class="hud-label">terminal mass revealed</div><div class="hud-value" id="massVisible">0.0000</div>
+        <div class="hud-label">render fps</div><div class="hud-value" id="renderFps">—</div>
+        <div class="hud-label">recommended path</div><div class="hud-value" id="policyPath">2*4 → 3*8 → 1*24</div>
+        <div class="hud-label">provider round-trips</div><div class="hud-value" id="requests">5</div>
+      </aside>
+      <div class="tree-caption"><b>这不是装饰性 mockup。</b>候选枝条先按状态层逐渐长出，推荐策略随后从根部向叶端逐段点亮；亮度编码真实路径质量。悬停任意节点查看证据。</div>
+    </section>
+
+    <section class="live-panel">
+      <div><h3>把录像切换成你的真实任务</h3><p>本地配置 <code>TYPESAFE_API_KEY</code> 后，输入四个数字。服务端会真实调用 Jev、枚举联合叶分布，再把新长出的树返回浏览器；密钥不会进入前端。</p><div class="api-state" id="apiState"><i></i><span>正在检查本地 API…</span></div></div>
+      <form class="live-form" id="liveForm"><input aria-label="number 1" value="2"><input aria-label="number 2" value="5"><input aria-label="number 3" value="6"><input aria-label="number 4" value="6"><select class="select" id="epsilon"><option value="0">raw Jev</option><option value="0.01">Jev + 1% exploration</option></select><button class="btn primary" type="submit">长出新树</button></form>
+      <div class="live-status" id="liveStatus"></div>
+    </section>
+
+    <section class="method">
+      <article><div class="method-num">01 / SCORE</div><h3>只让 Jev 做它擅长的局部判断</h3><p>adapter 给出当前状态与合法动作，Jev 一次返回完整分布。批量询问多个独立节点，减少网络往返。</p><div class="formula">P(a | s) ← Jev Choice</div></article>
+      <article><div class="method-num">02 / COMPOSE</div><h3>把概率组合成树或状态图</h3><p>沿路径相乘、合并等价状态、对循环做有限时域动态规划；未查询质量不会消失，而是记为 unresolved。</p><div class="formula">P(path)=∏ P(aₜ | sₜ)</div></article>
+      <article><div class="method-num">03 / DECIDE</div><h3>优化结局，而不是眼前一步</h3><p>把成功叶质量向上聚合，同时看局部可信度、下游成功质量和风险，在非支配的 Pareto 候选中行动。</p><div class="formula">max Pareto[local, success mass, −risk]</div></article>
+    </section>
+
+    <footer class="foot"><span>Reproducible artifact · source SHA-256 <code id="sourceHash">6cae719e…89f9</code></span><span>Probability mass ≠ calibrated real-world success probability · Apache-2.0</span></footer>
+  </main>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="recorded_tree.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      const recorded = window.JEVTREE_RECORDED;
+      const canvas = document.getElementById("treeCanvas");
+      const ctx = canvas.getContext("2d", { alpha: true });
+      const tooltip = document.getElementById("tooltip");
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const urlParams = new URLSearchParams(location.search);
+      const apiBase = (urlParams.get("api") || (["http:", "https:"].includes(location.protocol) ? "" : "http://127.0.0.1:8765")).replace(/\/$/, "");
+      const profileRendering = urlParams.has("profile");
+      let run = recorded;
+      let model = null;
+      let progress = reduceMotion ? 1 : 0;
+      let playing = !reduceMotion;
+      let last = performance.now();
+      let pointer = null;
+      let hoverFrame = 0;
+      let fpsFrames = 0;
+      let fpsWindowStart = performance.now();
+      let hudLast = 0;
+
+      const fmt = new Intl.NumberFormat("zh-CN");
+      const pct = value => `${(100 * Number(value || 0)).toFixed(Number(value || 0) < .01 ? 2 : 1)}%`;
+      const el = id => document.getElementById(id);
+
+      function buildModel(payload) {
+        const tree = payload.tree_visual;
+        const nodes = tree.nodes.map((node, index) => ({ ...node, index, children: [], x: .5, y: 1 }));
+        for (let i = 1; i < nodes.length; i++) nodes[nodes[i].parent].children.push(i);
+        const leaves = [];
+        function assign(index) {
+          const node = nodes[index];
+          if (!node.children.length) {
+            node.x = leaves.length;
+            leaves.push(index);
+            return node.x;
+          }
+          let weighted = 0, weight = 0;
+          for (const childIndex of node.children) {
+            const childX = assign(childIndex);
+            const childWeight = Math.max(nodes[childIndex].mass, 1e-12);
+            weighted += childX * childWeight;
+            weight += childWeight;
+          }
+          node.x = weight ? weighted / weight : 0;
+          return node.x;
+        }
+        assign(0);
+        const maxX = Math.max(1, leaves.length - 1);
+        const depthBuckets = Array.from({ length: tree.max_depth + 1 }, () => []);
+        for (const node of nodes) {
+          node.x = .035 + .93 * (1 - node.x / maxX);
+          node.y = .92 - (node.depth / Math.max(1, tree.max_depth)) * .80;
+          depthBuckets[node.depth].push(node.index);
+        }
+        const maxDepth = Math.max(1, tree.max_depth);
+        for (let depth = 0; depth < depthBuckets.length; depth++) {
+          const bucket = depthBuckets[depth];
+          bucket.sort((a, b) => nodes[b].mass - nodes[a].mass || a - b);
+          if (depth === 0) {
+            nodes[bucket[0]].birth = 0;
+            continue;
+          }
+          const layerStart = .03 + (depth - 1) * (.45 / Math.max(1, maxDepth - 1));
+          const layerEnd = Math.min(.96, layerStart + .28 + .08 * depth);
+          bucket.forEach((nodeIndex, rank) => {
+            const fraction = bucket.length === 1 ? 0 : rank / (bucket.length - 1);
+            nodes[nodeIndex].birth = layerStart + (layerEnd - layerStart) * fraction;
+          });
+          const policyIndex = bucket.find(nodeIndex => nodes[nodeIndex].policy);
+          if (policyIndex !== undefined) {
+            nodes[policyIndex].birth = .10 + (depth - 1) * (.56 / Math.max(1, maxDepth - 1));
+          }
+        }
+        for (let depth = 1; depth < depthBuckets.length; depth++) {
+          for (const nodeIndex of depthBuckets[depth]) {
+            const node = nodes[nodeIndex];
+            node.birth = Math.min(.98, Math.max(node.birth, nodes[node.parent].birth + .012));
+          }
+        }
+        const rootMass = Math.max(nodes[0].mass, 1e-12);
+        const rootSuccessMass = Math.max(nodes[0].success_mass, 1e-12);
+        for (const node of nodes) {
+          node.massGlow = Math.max(.10, Math.min(1, Math.pow(node.mass / rootMass, .15)));
+          node.successGlow = Math.max(.10, Math.min(1, Math.pow(node.success_mass / rootSuccessMass, .15)));
+        }
+        const order = nodes.map(node => node.index).sort((a, b) => nodes[a].birth - nodes[b].birth || nodes[a].depth - nodes[b].depth || a - b);
+        return { nodes, order, maxDepth: tree.max_depth, leafCount: leaves.length };
+      }
+
+      function resize() {
+        const box = canvas.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.35);
+        canvas.width = Math.max(1, Math.floor(box.width * dpr));
+        canvas.height = Math.max(1, Math.floor(box.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (model) {
+          for (const node of model.nodes) {
+            const point = screen(node, box.width, box.height);
+            node.px = point.x;
+            node.py = point.y;
+          }
+        }
+        draw();
+      }
+
+      function revealCount() {
+        if (!model) return 0;
+        let low = 0, high = model.order.length;
+        while (low < high) {
+          const middle = (low + high) >>> 1;
+          if (model.nodes[model.order[middle]].birth <= progress) low = middle + 1;
+          else high = middle;
+        }
+        return Math.max(1, low);
+      }
+
+      function smoothstep(start, end, value) {
+        const t = Math.max(0, Math.min(1, (value - start) / Math.max(.0001, end - start)));
+        return t * t * (3 - 2 * t);
+      }
+
+      function revealAlpha(node) {
+        return smoothstep(node.birth, node.birth + .075, progress);
+      }
+
+      function policyGlow(node) {
+        if (!node.policy || node.depth === 0) return 0;
+        const start = .13 + (node.depth - 1) * (.58 / Math.max(1, model.maxDepth - 1));
+        return smoothstep(start, Math.min(.96, start + .14), progress);
+      }
+
+      function screen(node, width, height) {
+        const canopy = height - 44;
+        const sway = Math.sin(node.index * 1.618) * Math.min(8, node.depth * 2.2);
+        return { x: node.x * width + sway, y: 14 + node.y * canopy };
+      }
+
+      function draw() {
+        if (!model) return;
+        const renderStarted = profileRendering ? performance.now() : 0;
+        const width = canvas.clientWidth, height = canvas.clientHeight;
+        ctx.clearRect(0, 0, width, height);
+        const count = revealCount();
+        const successMode = el("massMode").value === "success";
+        const edgeGroups = Array.from({ length: 24 }, () => new Path2D());
+        const nodeGroups = Array.from({ length: 24 }, () => new Path2D());
+        let visibleMass = 0;
+
+        for (let oi = 1; oi < count; oi++) {
+          const index = model.order[oi], node = model.nodes[index];
+          const parent = model.nodes[node.parent];
+          const alpha = Math.min(revealAlpha(node), revealAlpha(parent));
+          if (alpha <= 0) continue;
+          const glow = successMode ? node.successGlow : node.massGlow;
+          const glowBucket = Math.min(3, Math.floor(glow * 4));
+          const alphaBucket = Math.min(2, Math.floor(alpha * 3));
+          const outcomeBucket = node.success_mass > 0 ? 1 : 0;
+          const groupIndex = outcomeBucket * 12 + glowBucket * 3 + alphaBucket;
+          const edgePath = edgeGroups[groupIndex];
+          edgePath.moveTo(parent.px, parent.py);
+          const midY = (parent.py + node.py) / 2;
+          edgePath.bezierCurveTo(parent.px, midY, node.px, midY, node.px, node.py);
+
+          const nodePath = nodeGroups[groupIndex];
+          const radius = node.terminal ? .78 + .28 * glowBucket : 1.15 + .34 * glowBucket;
+          nodePath.moveTo(node.px + radius, node.py);
+          nodePath.arc(node.px, node.py, radius, 0, Math.PI * 2);
+          if (node.terminal) visibleMass += node.mass * alpha;
+        }
+
+        ctx.lineCap = "round";
+        for (let outcomeBucket = 0; outcomeBucket < 2; outcomeBucket++) {
+          for (let glowBucket = 0; glowBucket < 4; glowBucket++) {
+            for (let alphaBucket = 0; alphaBucket < 3; alphaBucket++) {
+              const groupIndex = outcomeBucket * 12 + glowBucket * 3 + alphaBucket;
+              const glow = (glowBucket + .55) / 4;
+              const alpha = (alphaBucket + .65) / 3;
+              ctx.lineWidth = .48 + 1.72 * glow;
+              ctx.strokeStyle = outcomeBucket
+                ? `rgba(94,255,177,${alpha * (.15 + .48 * glow)})`
+                : `rgba(145,177,162,${alpha * (.08 + .22 * glow)})`;
+              ctx.shadowColor = outcomeBucket ? "rgba(94,255,177,.40)" : "transparent";
+              ctx.shadowBlur = outcomeBucket ? 3.5 * glow : 0;
+              ctx.stroke(edgeGroups[groupIndex]);
+
+              ctx.fillStyle = outcomeBucket
+                ? `rgba(123,255,184,${alpha * (.30 + .62 * glow)})`
+                : `rgba(151,181,167,${alpha * (.15 + .36 * glow)})`;
+              ctx.shadowBlur = 0;
+              ctx.fill(nodeGroups[groupIndex]);
+            }
+          }
+        }
+        ctx.shadowBlur = 0;
+
+        for (let oi = 1; oi < count; oi++) {
+          const node = model.nodes[model.order[oi]];
+          if (!node.policy) continue;
+          const pathGlow = policyGlow(node);
+          if (pathGlow <= 0) continue;
+          const parent = model.nodes[node.parent];
+          const alpha = Math.min(revealAlpha(node), revealAlpha(parent)) * pathGlow;
+          const midY = (parent.py + node.py) / 2;
+          ctx.beginPath();
+          ctx.moveTo(parent.px, parent.py);
+          ctx.bezierCurveTo(parent.px, midY, node.px, midY, node.px, node.py);
+          ctx.lineWidth = 1.8 + pathGlow * 1.5;
+          ctx.strokeStyle = `rgba(190,255,82,${.18 + .82 * alpha})`;
+          ctx.shadowColor = "rgba(190,255,82,.98)";
+          ctx.shadowBlur = 18 * pathGlow;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(node.px, node.py, 1.8 + 2.4 * pathGlow, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(224,255,145,${.30 + .70 * alpha})`;
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+
+        const root = model.nodes[0];
+        const pulse = playing ? 1 + .12 * Math.sin(performance.now() / 260) : 1;
+        ctx.beginPath(); ctx.arc(root.px, root.py, 5.5 * pulse, 0, Math.PI * 2); ctx.fillStyle = "#e8ffac"; ctx.shadowColor = "#beff52"; ctx.shadowBlur = 22; ctx.fill(); ctx.shadowBlur = 0;
+
+        const now = performance.now();
+        if (!playing || progress >= 1 || now - hudLast >= 80) {
+          el("nodesGrown").textContent = `${fmt.format(count)} / ${fmt.format(model.nodes.length)}`;
+          el("massVisible").textContent = Math.min(1, visibleMass).toFixed(4);
+          el("timeline").value = String(Math.round(progress * 1000));
+          el("progressLabel").textContent = `${Math.round(progress * 100)}%`;
+          hudLast = now;
+        }
+        if (profileRendering) canvas.dataset.renderMs = (performance.now() - renderStarted).toFixed(2);
+      }
+
+      function hitTest(event) {
+        if (!event || !model) { tooltip.style.display = "none"; return; }
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left, y = event.clientY - rect.top;
+        let best = null, bestDistanceSquared = 225;
+        for (const node of model.nodes) {
+          if (node.birth > progress) continue;
+          const dx = node.px - x, dy = node.py - y;
+          const distanceSquared = dx * dx + dy * dy;
+          if (distanceSquared < bestDistanceSquared) { bestDistanceSquared = distanceSquared; best = node; }
+        }
+        if (!best) { tooltip.style.display = "none"; return; }
+        const conditionalSuccess = best.mass ? best.success_mass / best.mass : 0;
+        tooltip.innerHTML = `<strong>${escapeHtml(best.action)}</strong>depth ${best.depth} · ${best.terminal ? (best.success ? "成功叶" : "失败叶") : "决策节点"}<br>joint path mass <b>${pct(best.mass)}</b><br>successful descendant mass <b>${pct(best.success_mass)}</b><br>P(success | branch) <b>${pct(conditionalSuccess)}</b>${best.policy ? "<br>★ recommended policy" : ""}`;
+        tooltip.style.display = "block";
+        tooltip.style.left = `${Math.min(innerWidth - 292, event.clientX + 14)}px`;
+        tooltip.style.top = `${Math.min(innerHeight - 145, event.clientY + 14)}px`;
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+      }
+
+      function setRun(payload) {
+        if (!payload || !payload.tree_visual || !payload.metrics || !payload.recommended) {
+          throw new Error("Demo 后端版本过旧：响应缺少 tree_visual。请重启 jev-tree-demo 后刷新页面。");
+        }
+        run = payload;
+        model = buildModel(payload);
+        const previewValue = urlParams.get("progress");
+        const previewProgress = Number(previewValue);
+        const hasPreviewProgress = previewValue !== null && Number.isFinite(previewProgress) && previewProgress >= 0 && previewProgress <= 1;
+        progress = hasPreviewProgress ? previewProgress : (reduceMotion ? 1 : 0);
+        playing = !hasPreviewProgress && !reduceMotion;
+        fpsFrames = 0;
+        fpsWindowStart = performance.now();
+        const recordedRun = payload.run_kind === "recorded";
+        el("runTag").textContent = recordedRun ? "RECORDED" : "LIVE";
+        el("topStatus").textContent = recordedRun ? "RECORDED · VERIFIED ARTIFACT" : "LIVE · TYPESAFE JEV";
+        el("taskTitle").textContent = `${payload.task.name} · ${payload.task.numbers.join(" ")}`;
+        el("taskSubtitle").textContent = `${fmt.format(payload.tree_visual.node_count)} 个真实前缀节点 · ${fmt.format(payload.metrics.leaves)} 个可验证叶节点 · ${payload.model}`;
+        el("policyPath").textContent = payload.recommended.actions.join(" → ");
+        el("requests").textContent = fmt.format(payload.metrics.provider_requests);
+        el("sourceHash").textContent = payload.source_artifact_sha256 ? `${payload.source_artifact_sha256.slice(0, 8)}…${payload.source_artifact_sha256.slice(-4)}` : "live response";
+        el("playButton").textContent = playing ? "Ⅱ 暂停生长" : "▶ 继续生长";
+        resize();
+      }
+
+      function animate(now) {
+        const dt = Math.min(60, now - last); last = now;
+        if (playing && progress < 1) {
+          fpsFrames++;
+          if (now - fpsWindowStart >= 600) {
+            el("renderFps").textContent = `${Math.round(fpsFrames * 1000 / (now - fpsWindowStart))} fps`;
+            fpsFrames = 0;
+            fpsWindowStart = now;
+          }
+          progress = Math.min(1, progress + dt / 6200);
+          if (progress === 1) { playing = false; el("playButton").textContent = "▶ 再看一次"; }
+          draw();
+        }
+        requestAnimationFrame(animate);
+      }
+
+      el("playButton").addEventListener("click", () => {
+        if (progress >= 1) progress = 0;
+        playing = !playing;
+        if (playing) { fpsFrames = 0; fpsWindowStart = performance.now(); }
+        el("playButton").textContent = playing ? "Ⅱ 暂停生长" : "▶ 继续生长";
+        draw();
+      });
+      el("replayButton").addEventListener("click", () => { progress = 0; playing = true; fpsFrames = 0; fpsWindowStart = performance.now(); el("playButton").textContent = "Ⅱ 暂停生长"; draw(); });
+      el("timeline").addEventListener("input", event => { progress = Number(event.target.value) / 1000; playing = false; el("playButton").textContent = "▶ 继续生长"; draw(); });
+      el("massMode").addEventListener("change", draw);
+      canvas.addEventListener("mousemove", event => {
+        pointer = event;
+        if (hoverFrame) return;
+        hoverFrame = requestAnimationFrame(() => { hoverFrame = 0; hitTest(pointer); });
+      });
+      canvas.addEventListener("mouseleave", () => { pointer = null; tooltip.style.display = "none"; });
+      new ResizeObserver(resize).observe(canvas);
+
+      async function checkApi() {
+        const state = el("apiState"), label = state.querySelector("span");
+        try {
+          const response = await fetch(`${apiBase}/api/health`, { cache: "no-store" });
+          const health = await response.json();
+          if (!response.ok || !health.ok || !health.capabilities?.includes("tree_visual")) {
+            throw new Error("incompatible backend");
+          }
+          state.className = "api-state ready";
+          label.textContent = health.api_key_configured ? "API 已连接 · Jev key 已配置" : "API 已连接 · 尚未配置 Jev key";
+          return true;
+        } catch (_) {
+          state.className = "api-state error";
+          label.textContent = "API 未连接 · 运行 jev-tree-demo 后刷新";
+          return false;
+        }
+      }
+
+      el("liveForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const status = el("liveStatus"), button = event.currentTarget.querySelector("button");
+        const numbers = [...event.currentTarget.querySelectorAll("input")].map(input => Number(input.value));
+        status.className = "live-status show"; status.textContent = "正在批量询问 Jev、组合联合叶分布…"; button.disabled = true;
+        try {
+          const response = await fetch(`${apiBase}/api/game24`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numbers, exploration_epsilon: Number(el("epsilon").value) }) });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+          setRun(payload);
+          status.textContent = `完成：${fmt.format(payload.metrics.unique_queried_states)} 个唯一 Jev 状态，${fmt.format(payload.metrics.provider_requests)} 次 API 往返，${(payload.metrics.provider_latency_ms / 1000).toFixed(2)} 秒 provider latency。`;
+        } catch (error) {
+          status.textContent = `未运行 live task：${error.message}。请在仓库运行 jev-tree-demo，并确认上方显示“API 已连接”；静态文件可用 ?api=http://127.0.0.1:8765 指定后端。`;
+        } finally { button.disabled = false; }
+      });
+
+      if (!recorded) {
+        document.querySelector(".stage").innerHTML = "<p style='padding:24px'>recorded_tree.js 未加载。请重新生成 demo artifact。</p>";
+        return;
+      }
+      setRun(recorded);
+      checkApi();
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+</html>

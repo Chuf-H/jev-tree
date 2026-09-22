@@ -1,0 +1,8 @@
+services:
+  demo:
+    build: .
+    ports:
+      - "8765:8765"
+    environment:
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+    restart: unless-stopped
