@@ -4,7 +4,7 @@
 
 [简体中文](README.zh-CN.md)
 
-![JevTree probability tree](assets/jevtree-probability-tree-concept.png)
+![JevTree: from fast local judgment to an executable probability tree](assets/jevtree-readme-hero-final.png)
 
 JevTree is a small, typed Python runtime for finite multi-step decision problems. Your adapter defines
 states, legal actions, transitions, and terminal verification. JevTree asks Jev for local action
@@ -12,6 +12,59 @@ distributions, composes them into path probabilities, merges equivalent states, 
 and selects actions using downstream outcome mass instead of one-step greediness.
 
 It is a planner runtime—not generated chain-of-thought and not an LLM wrapper.
+
+## Why JevTree
+
+Jev is good at answering “what should I choose now?” quickly. In a long-horizon task, however, the
+highest-probability action at the current step may not lead to the best final outcome. JevTree turns
+fast local judgments into a probability graph that directly participates in execution:
+
+1. expand multiple candidate futures from the current state;
+2. ask Jev for batched local distributions, `P(action | state)`;
+3. compose joint path mass and merge equivalent states;
+4. aggregate success, failure, and unresolved mass;
+5. select from the Pareto frontier of local probability, downstream quality, and risk.
+
+The adapter remains responsible for legal actions, state transitions, terminal verification, and safety
+gates. Jev becomes the decision engine; JevTree provides the long-horizon probability runtime.
+
+## Controlled evidence
+
+### Same Jev evidence, different decision policy
+
+The primary comparison reuses the same Jev probability judgments for both policies. The local-greedy
+ablation chooses the highest-probability next action; JevTree composes future path quality and propagates
+verified outcomes. This isolates how the harness uses one probability space instead of changing the
+underlying model.
+
+| Benchmark | Local Jev greedy | JevTree | Absolute gain |
+|---|---:|---:|---:|
+| Game24 official 100 | 7/100 | **100/100** | **+93 pp** |
+| MiniGrid unseen 100 | 70/100 | **93/100** | **+23 pp** |
+
+Across the 200 tasks, there were no provider errors and the maximum probability-mass conservation error
+was `1.33e-15`.
+
+### Small paired comparison with Opus 4.8
+
+As secondary evidence, Opus 4.8 ran a closed-loop action policy on two fixed 20-task slices with the full
+current state and legal actions.
+
+| Fixed slice | JevTree | Opus 4.8 | Recorded wall time |
+|---|---:|---:|---:|
+| Game24, 20 tasks | **20/20** | 3/20 | 75.5s vs 213.1s (2.82× shorter for JevTree) |
+| MiniGrid, 20 seeds | **18/20** | 9/20 | 234.6s vs 375.8s (1.60× shorter as recorded) |
+
+This is not a general model ranking. The MiniGrid Opus run includes one 180-second CLI transport timeout,
+and the systems use different batching structures. These are reproducible end-to-end recorded times, not
+a universal provider-speed claim. JevTree also used substantially more provider tokens in these runs: its
+current advantage is search reliability and auditability, not token optimality.
+
+## Where this could go
+
+The runtime is intended for tasks with structured state, enumerable legal actions, executable or
+predictable transitions, and a verifier. Promising directions include shopping and constraint filtering,
+web forms, customer-service API workflows, game control, and coding-agent tool scheduling.
 
 ## What is included
 
