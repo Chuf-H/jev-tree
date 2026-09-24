@@ -1,0 +1,2592 @@
+arXiv:2602.17805v1 [cs.CR] 19 Feb 2026
+
+Exploiting Liquidity Exhaustion Attacks in Intent-Based Cross-Chain Bridges
+André Augusto
+INESC-ID, Instituto Superior Técnico,
+University of Lisbon
+
+Christof Ferreira Torres
+INESC-ID, Instituto Superior Técnico,
+University of Lisbon
+
+André Vasconcelos
+INESC-ID, Instituto Superior Técnico,
+University of Lisbon
+
+Miguel Correia
+INESC-ID, Instituto Superior Técnico,
+University of Lisbon
+sender 
+(Br9W...ASBb)
+
+Abstract
+Intent-based cross-chain bridges have emerged as an alternative to traditional interoperability protocols by allowing
+off-chain entities (solvers) to immediately fulfill users’ orders by fronting their own liquidity. While improving user
+experience, this approach introduces new systemic risks, such
+as solver liquidity concentration and delayed settlement. In
+this paper, we propose a new class of attacks called liquidity
+exhaustion attacks and a replay-based parameterized attack
+simulation framework. We analyze 3.5 million cross-chain
+intents that moved $9.24B worth of tokens between June and
+November 2025 across three major protocols (Mayan Swift,
+Across, and deBridge), spanning nine blockchains.
+For rational attackers, our results show that protocols with
+higher solver profitability, such as deBridge, are vulnerable
+under current parameters: 210 historical attack instances yield
+a mean net profit of $286.14, with 80.5% of attacks profitable.
+In contrast, Across remains robust in all tested configurations due to low solver margins and very high liquidity, while
+Mayan Swift is generally secure but becomes vulnerable under stress-test conditions. Under byzantine attacks, we show
+that it is possible to suppress availability across all protocols,
+causing dozens of failed intents and solver profit losses of
+up to $978 roughly every 16 minutes. Finally, we propose an
+optimized attack strategy that exploits patterns in the data to
+reduce attack costs by up to 90.5% compared to the baseline,
+lowering the barrier to liquidity exhaustion attacks.
+
+1
+
+Intent
+
+fetches and indexes intents
+
+Mayan Backend
+broadcast
+
+submits intent
+and locks tokens
+recipient 
+(0xa13a...4015)
+
+transfer funds
+
+to user’s address
+
+Mayan Swift Program
+Mayan Auction Program
+OrderFulfilled
+emits
+
+Mayan Swift Contract
+
+gets locked
+
+funds
+bid in auction
+
+Drivers (i.e., Solvers)
+
+auction winner fills
+intent with own funds
+
+Figure 1: Cross-chain transaction flow from Solana to
+Ethereum using Mayan Swift’s bridge (a Wormhole bridge).
+its complexity and security implications become more pronounced.
+In cross-chain environments, intent-based designs promise
+a faster movement of assets across heterogeneous blockchains.
+Instead of dealing with the traditional “lock–relay–unlock”
+pipeline (or any other variation such as lock-mint, or burnmint), users submit intents such as: “swap x units of token X
+on chain A for y units of token Y on chain B” [1]. Solvers bid
+in auctions to fulfill these intents as fast as possible by fronting
+their own liquidityA on the destination chain. Later on, solvers
+reclaim repayment through an intent settlement mechanism
+that verifies the correctness of the fill in relation to the user’s
+intent. High-profile protocols such as Across [21] (used by
+Uniswap [2]), Mayan Swift (the second largest Wormholebased bridge behind Portal, with the highest volume between
+Solana and Ethereum [25]), and deBridge [12] have adopted
+this design due to its low latency and improved user experience.
+There is an inversion of the execution order of intent-based
+bridges that marks a fundamental departure from classical
+bridges. Traditional bridges move the user’s funds first and
+release assets on the destination chain only after finality is
+achieved at the source and whenever a set of signatures or
+proofs is computed. Intent-based systems reverse this se-
+
+Introduction
+
+The decentralized finance (DeFi) ecosystem has recently undergone a significant architectural shift with the rise of intentbased protocols. Rather than specifying explicit transaction
+steps, users now specify the desired end state (i.e., their intent), which is executed by specialized off-chain actors called
+solvers that compete to fulfill these orders in an auction [10].
+This paradigm, initially adopted in decentralized exchanges
+(DEXes), is rapidly expanding to cross-chain systems, where
+1
+
+quence: solvers deliver assets immediately, while verification
+occurs afterward (cf. Figure 1). The protocol auction specifies
+the winning solver that must fulfill the intent. This design
+improves latency and user experience, but introduces new systemic risks. In particular, solvers must maintain substantial
+locked liquidity, and settlement delays or failures shift the risk
+from the user to the solver. As a result, the safety and liveness
+of the protocol are critically dependent on the total liquidity
+available and the availability of these solvers.
+This paper aims to raise awareness for a new class of attacks
+and explores an under-researched topic: the susceptibility of
+intent-based cross-chain protocols, or specific solvers, to suffer liquidity exhaustion attacks. Since solvers front capital
+before being reimbursed, their liquidity can be temporarily
+drained, either accidentally, strategically by rational adversaries exploiting profit conditions, or intentionally by byzantine actors aiming to disrupt service. To our knowledge, this
+is the first paper that investigates not only such attacks but
+also cross-chain intents in general.
+We summarize the contributions as follows:
+
+dependent consensus, execution, and data availability layers,
+assets on one chain cannot be transferred directly to another.
+Bridges address this limitation by providing a mechanism to
+move value or messages across blockchains, typically through
+lock-mint, burn-mint, or lock-unlock schemes [6]. In these designs, a user’s asset on the source chain is locked or destroyed,
+and a corresponding representation is released or minted on
+the destination chain once verification has been performed,
+often in the form of validator signatures, light-client proofs, or
+threshold attestations. Although widely deployed, traditional
+bridges inherently suffer from high latency [5].
+
+2.1
+
+Intent-based interoperability introduces a fundamentally different model for cross-chain execution. Instead of specifying
+concrete transaction steps, users express their desired final
+state (an intent) and delegate the execution to a market of competing off-chain actors. This paradigm shifts operational complexity away from users and towards solvers, who are capable
+of satisfying the intent across blockchains. Figure 1 depicts
+the flow of information in Mayan Swift, a Wormhole [15]based bridge known for bridging EVM-based blockchains
+and Solana.
+The terminology used in the paper is defined below:
+
+• First empirical measurement of solver liquidity, settlement delays, and real-world intent flows. We collect data
+from Jun 1, 2025 to Nov 1, 2025, totaling 3.5 million
+intents moving more than $9.24 billion in three major
+intent-based bridges across nine blockchains.
+• Analyzing vulnerabilities that arise when adversaries
+submit sequences of intents designed to temporarily decrease solver liquidity, preventing honest solvers from
+participating until the intent refund.
+• Evaluating attacks under both rational and byzantine models, showing how liquidity exhaustion can halt
+or severely degrade service depending on protocol parameters, settlement latencies, and solver heterogeneity.
+• Proposing defense guidelines and mitigation strategies for protocol operators and solvers to minimize the
+risks associated with such attacks.
+
+• Intents. A high-level user specification of a desired final state across chains, without prescribing the concrete
+steps required to achieve it.
+• Solvers. Off-chain actors that compete to fulfill intents
+by fronting liquidity and executing the cross-chain operations.
+• Intent Fulfillment. The process in which a solver delivers the requested assets to the user on the destination
+chain.
+• Intent Settlement. Verification that the solver’s fulfillment (sometimes mentioned as just fill) matches the
+user’s intent and triggers the refund process.
+
+This paper is structured as follows. Section 2 presents an
+overview of cross-chain bridges and a theoretical comparison
+of each protocol analyzed in the paper. In Section 3 we propose the Liquidity Exhaustion Attacks. Section 4 overviews
+our data collection process and identifies some key vulnerabilities that make such attacks possible. Section 5 describes our
+simulation framework used in Sections 6, 7, and 8 assuming
+both rational and byzantine adversaries. Sections 9 and 10
+contain some defense strategies and the discussion of our
+findings. Finally, Sections 11 and 12 outline the related work
+and the conclusion of the paper.
+
+2
+
+Cross-Chain Intents
+
+• Solver Refunds. The asynchronous repayments solvers
+receive after settlement, releasing the liquidity they
+fronted during fulfillment.
+
+2.2
+
+Solver Behavior and Liquidity
+
+Table 1 summarizes the key differences among the three protocols analyzed in this paper, including usage patterns, solver
+behavior, fulfillment mechanisms, and settlement delays. The
+table is derived from our analysis of the collected dataset (see
+Section 4 for details).
+Solver Selection. Protocols vary in their solver selection
+mechanisms and solver concentration. All protocols allow
+open participation in the auctions. However, Mayan Swift
+employs an English auction with a relatively distributed
+
+Cross-Chain Bridges and Intents
+
+Cross-chain bridges enable interoperability between heterogeneous blockchains [7]. Because blockchains maintain in2
+
+Solver Selection Algorithm
+Bridge Protocol
+# of Unique Solvers†
+% of Fulfills by Top Solver
+# of Fulfills (Jun - Nov 2025)
+Median Intent Fulfillment Time (s)
+Median Solver Refund Time (s)
+Median Solver Profitability (%)
+Median User Paid Protocol Fees (%)
+Median Intent Value ($)
+Median Total Solver Liquidity ($)
+Total Value Transacted (Billion $)
+
+Mayan Swift
+
+Across
+
+deBridge
+
+English Auction
+Wormhole
+14
+24
+895,206
+28.0
+1281
+0.381
+0.029
+74.395
+600,000
+0.852
+
+FCFS
+Across
+60
+19
+1,619,496
+8.0
+7200*
+0.018
+0.027
+73.060
+8,900,000
+3.61
+
+FCFS
+deBridge
+9
+94
+937,688
+20.0
+989
+1.129
+1.305
+260.411
+514,000
+4.78
+
+Token Swap
+WETH
+WETH
+WETH
+WETH
+WETH
+
+SOL
+SOL
+SOL
+SOL
+SOL
+USDC
+USDC
+USDC
+USDC
+USDC
+
+USDC
+USDC
+USDC
+USDC
+USDC
+
+Other
+Other
+Other
+Other
+Other
+
+USDC
+USDC
+USDC
+USDC
+USDC
+
+USDT
+USDT
+USDT
+USDT
+USDT
+
+WETH
+WETH
+WETH
+WETH
+WETH
+WETH
+WETH
+WETH
+WETH
+WETH
+
+WETH
+WETH
+WETH
+WETH
+WETH
+
+SOL
+SOL
+SOL
+SOL
+SOL
+USDC
+USDC
+USDC
+USDC
+USDC
+
+WBNB
+WBNB
+WBNB
+WBNB
+WBNB
+
+*theoretical value based on Across’s documentation
+† a complete list can be found in Table 8 in Appendix B
+
+Other
+Other
+Other
+Other
+Other
+
+USDT
+USDT
+USDT
+USDT
+USDT
+
+Source Blockchain
+
+Table 1: Stats for the bridges analyzed and the stats are presented for fulfills on Ethereum
+
+USDT
+USDT
+USDT
+USDT
+USDT
+
+Target Blockchain
+
+USDT
+USDT
+USDT
+USDT
+USDT
+WBNB
+WBNB
+WBNB
+WBNB
+WBNB
+
+Figure 2: Simplified token routing: low-liquidity tokens are
+converted to a small set of high-liquidity tokens (e.g., ETH,
+USDC, USDT) for efficient solver balance management. If
+the user requests a different token on the destination chain,
+these are optionally swapped accordingly.
+
+solver set, while Across and deBridge follow a first-comefirst-served (FCFS) model. deBridge exhibits strong solver
+centralization, with a single solver responsible for 94% of
+fulfillments. Across has a bigger set of solvers and the top
+solver is responsible for 24% of the fulfillments.
+Solver Refund Times. Median refund times range from
+approximately 1,000 seconds (in Mayan and deBridge) to
+more than two hours (in Across), during which the solver capital remains locked. The massive difference between Across
+and the other protocols is due to its reliance on an optimistic
+oracle with 2h fraud proof window. This period is the attack
+window for a liquidity exhaustion attack.
+Intent Value Distribution. While Mayan and Across have
+comparable median intent values, deBridge processes significantly larger transfers, amplifying the impact of individual
+large intents on solver liquidity.
+Token Balances. Solvers only need to maintain balances in
+a small set of highly liquid tokens. Although users may specify
+a wide variety of assets to receive on the destination chain,
+solvers typically fulfill intents using a limited set of base assets
+(e.g., ETH, USDC, and USDT) and perform token swaps
+to obtain the requested tokens (Figure 2 depicts this flow
+for Mayan Swift, while Across and deBridge follow similar
+patterns). This information allows to efficiently calculate the
+total liquidity available for each solver at each timestamp.
+
+3
+
+Token Swap
+
+quests. Figure 3 contains a sequence diagram showing the
+sequence of steps to induce the attack.
+Attack Goal: Temporarily drain the liquidity of solvers in
+a cross-chain protocol to 1) maximize the number of intents
+fulfilled by an attacker in order to maximize profit; or 2) break
+the availability of the protocol, recreating a denial of service
+attack through liquidity exhaustion.
+
+3.1
+
+Adversarial Model
+
+We model an adversary A who can generate arbitrary crosschain intents and strategically choose their timing based on
+publicly observable information such as solver liquidity, repayment delays, and historical fill behavior. A may pursue
+two goals: (i) a byzantine (malicious) strategy that seeks
+to degrade protocol liveness or harm specific solvers even
+at financial loss; or (ii) a rational and profit-driven strategy
+that exploits temporary liquidity imbalances to extract financial gain. A can submit intents on any supported blockchain,
+target one solver or multiple simultaneously, and possesses
+enough capital to execute the attack but cannot interfere with
+settlement logic, or compromise other solvers or protocol
+configurations. Finally, a rational adversary needs to be an
+eligible solver in each protocol.
+
+Liquidity Exhaustion Attacks
+
+We introduce liquidity exhaustion attacks, a previously unexplored class of attacks against intent-based cross-chain protocols. These attacks arise from a fundamental design property
+of such systems: solvers must front liquidity to fulfill intents
+immediately, while reimbursement occurs only after an asynchronous and variable settlement delay. An attacker A exploits
+a protocol by submitting carefully timed large-value intents
+that temporarily exhaust solvers’ liquidity (Intent Flooding
+stage), causing solvers to become unable to bid in subsequent
+intents and consequently to fulfill subsequent legitimate re-
+
+3.2
+
+Attack Models
+
+We index intents by i. For each historical intent, we observe
+the following quantities from on-chain data:
+• Vi : value transacted in intent i,
+• pi : solver profit margin for fulfilling intent i,
+prot
+• Fi : effective protocol fee rate (usually composed of a
+percentage of the Vi plus a fixed fee) charged for intent i,
+• gi : transaction fee incurred when fulfilling intent i,
+3
+
+Adversary
+
+Bridge Contract
+
+
+Settlement Contract
+
+
+(Chain A)
+
+(Chain A)
+
+Bridge Contract
+
+
+Solver (Victim)
+
+(Chain B)
+
+Honest User
+
+Intent Flooding
+Submit N
+
+Listens to intents
+
+high-value intents
+
+Front liquidity to fill intents
+
+Liquidity Locked Awaiting Settlement
+Submits intent
+Listens to intents
+Cannot fill honest user intents
+
+x
+
+x
+
+optional (rational adversary)
+Listens to intents
+Fill incoming intents (earn fulfillment fees)
+
+Submit settlement claims
+Perform verification
+Attack Window = Repayment Time
+Refund intents value
+
+Figure 3: Sequence diagram of a liquidity exhaustion attack, showing the interaction between attacker, solvers, and protocol.
+• Ciauction : transaction fees incurred when bidding in the
+auction for intent i,
+• ti : timestamp at which intent i is created.
+
+
+
+Cfill_intents = ∑ gi + Ciauction
+
+where gi is the gas fee and Ciauction is the auction bidding cost
+for intent i.
+
+Let L(t) denote the total liquidity available by all solvers
+at timestamp t.
+3.2.1
+
+3.2.3
+
+Liquidity Exhaustion and Attack Induction Cost
+
+gas
+
+Ri = Vi · pi
+
+(3)
+
+Total attack revenue is then given by:
+rattack = ∑ Ri
+
+(4)
+
+i
+
+3.2.4
+
+Net Profit
+
+Finally, the attacker’s net profit over the attack window is:
+
+(1)
+
+where α · L(t) · F prot represents the capital required to temgas
+porarily remove competing liquidity, Cinduction (t) captures the
+blockchain transaction fees paid during in the Intent Flooding
+stage. This expression reflects that inducing greater liquidity
+exhaustion requires proportionally more capital and transaction fees.
+
+Profit = rattack − Cinduction − Cfill_intents − ε
+
+(5)
+
+where ε accounts for an additional potential cost of adverse
+price effects due to large token movements, slippage, swap
+fees, opportunity costs, etc.
+
+4
+3.2.2
+
+Attack Revenue
+
+When the attacker successfully fulfills intent i, they earn:
+
+We model liquidity exhaustion abstractly via an exhaustion
+parameter α ∈ [0, 1], which represents the fraction of competing solver liquidity that becomes unavailable during an attack
+window. This parameter is not optimized analytically; instead,
+it serves as a conceptual abstraction that captures varying
+degrees of liquidity exhaustion observed in our simulations
+(mainly in the targeted attack strategy in Section 8).
+The cost incurred by A to exhaust liquidity at time t is
+modeled as:
+Cinduction (α,t) = α · L(t) · F prot +Cinduction (t)
+
+(2)
+
+i
+
+Cost to Fill Intents
+
+Data Collection and Analysis
+
+In this section, we explain our data extraction process, the
+interval under analysis, and present a first analysis that sum-
+
+The attacker also incurs costs to actually fulfill intents:
+4
+
+Asymmetric Profitability Across Chains. Solver profitability varies significantly across blockchain pairs. Ethereum consistently yields the highest per-intent solver profits across all
+protocols, while transferring from Solana exhibits the lowest
+user-paid fees for transfers into Ethereum. More specifically,
+token transfers from Solana are 30 – 55% cheaper for users
+while token transfers to Ethereum yield 2 – 4x higher solver
+profits compared to other paths.
+Solver Rebalancing and Liquidity Injections. We examine
+whether solver liquidity is actively rebalanced in response
+to low balances or follows a systematic pattern. Figure 5
+shows an example period for the most active Mayan Swift
+solver. In the entire dataset, we find no evidence of automated
+or reactive rebalancing: liquidity injections do not occur at
+regular intervals, are not triggered by balances crossing consistent thresholds, and do not exhibit stable or proportional
+sizes. Instead, injections appear sporadic and weakly correlated with short-term liquidity shortage, suggesting that transient liquidity dips can persist long enough to be exploited by
+opportunistic attackers.
+
+marizes the key vulnerabilities that, theoretically, make the
+liquidity exhaustion attacks described in Section 3 possible.
+
+Dataset Overview
+
+Our study analyzes three intent-based cross-chain protocols:
+Mayan Swift, Across, and deBridge. These protocols rank
+among the largest intent-based bridges by volume and together represent a substantial fraction of cross-chain activity [13]. Several other systems rely on one or more of these
+protocols, making them representative of the broader intentbased bridging ecosystem. The dataset covers the period from
+June 1, 2025, to November 1, 2025, and includes blockchains
+accounting for over 90% of the total value transacted by each
+protocol (including Solana, Arbitrum, Ethereum, Base, Polygon, BNB, Unichain, Optimism, and Avalanche).
+We construct a unified dataset (the schema used is in
+Appendix A) by extracting on-chain event data from each
+protocol’s smart contracts. Solver liquidity is reconstructed
+from on-chain token transfer events from high-liquidity tokens (such as ETH, USDC, USDT, WBNB, WBTC – cf.
+Figure 2) and balance queries to public RPC endpoints,
+while transactions on different blockchains are merged using
+protocol-specific identifiers. Token prices are obtained using
+Alchemy’s Token Prices API [3] with daily granularity, and
+solver profitability, protocol fees, and fulfillment latency are
+derived off-chain from the reconstructed traces. The dataset
+and code will be made publicly available.
+
+Injected Value (Thousands USD)
+
+Solver Balance
+
+250
+
+500
+
+200
+
+400
+
+150
+
+300
+
+100
+
+200
+
+50
+
+100
+
+0
+
+4.2
+
+21 Jun
+
+22 Jun
+
+23 Jun
+
+24 Jun
+
+25 Jun
+
+26 Jun
+
+27 Jun
+
+28 Jun
+
+29 Jun
+
+30 Jun
+
+0
+
+Vulnerabilities Identified
+Figure 5: Hourly liquidity injections (bars) versus solver balance (dashed line) for Mayan Swift’s top solver between June
+20 and June 30, 2025. The data reveals no automatic mechanism of injection of liquidity once liquidity goes below a
+certain threshold.
+
+Our analysis reveals structural patterns making intent-based
+protocols vulnerable to liquidity exhaustion attacks.
+Temporal Concentration of Demand. Intent activity is
+highly time-dependent. In all protocols analyzed, the majority of the total value transacted occurs within a four-hour
+window (10am – 2pm EST). Figure 4 illustrates this concentration for deBridge, with similar patterns observed for Mayan
+and Across. These periods concentrate liquidity demand, increasing the likelihood that large intents temporarily exhaust
+available liquidity.
+Total Intent Volume (Millions USD)
+
+20 Jun
+
+USDC Solver Balance (Thousands USD)
+
+4.1
+
+250
+
+Liquidity Volatility and Attack Windows. Figure 6 depicts
+the volatility of solver balances over time. The volatility is created by the fulfillment and repayment of intents. The recurrent
+dips create recurring attack windows that can be exploited
+when combined with delayed settlement and limited liquidity
+injections.
+
++1 Std Dev
+Median
+
+Main Insights. Intent-based cross-chain protocols concentrate demand
+in predictable time windows, exhibit asymmetric solver profitability
+across chains, rely on highly centralized solver markets, and experience
+volatile solver liquidity. These characteristics enable economically
+feasible liquidity exhaustion attacks through adversarial timing.
+
+200
+150
+100
+50
+0
+
+00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+
+Hour of Day (EST)
+
+5
+
+Figure 4: Hourly distribution of intent volume for deBridge,
+showing strong temporal concentration of value transacted
+between 9am-2pm EST.
+
+Attack Simulation Framework
+
+To evaluate liquidity exhaustion attacks, we create a replaybased simulation framework that injects adversarial intents
+into historical cross-chain transaction traces. The goal of the
+5
+
+3.0
+
+USDC Balance (Millions USD)
+
+2.5
+
+5.2
+
+0x07ae8551be970cb1cca11dd7a11f47ae82e70e67
+0x699ee12a1d97437a4a1e87c71e5d882b3881e2e3
+0x3d7dc36aa2b542ad239012730dfdb23f03d75be9
+0xeff7337b37c8d217d01cb8223fe497abd75190d5
+0xef1ec136931ab5728b0783fd87d109c9d15d31f1
+
+Our evaluation distinguishes between parameters fixed to historical on-chain values and parameters varied as controlled
+stress tests. In all tables, the parameters set to their observed
+values are labeled as “Real”, while the simulated parameters
+report the effective value used. The simulated values are not
+arbitrary: whenever a parameter is varied, we reuse the values
+observed in one of the other protocols (in Table 1), allowing
+cross-protocol stress testing under realistic operating conditions. Transaction volume is varied via a volume multiplier,
+where a value of 1 corresponds to the real historical volume,
+and larger values scale total volume to match that of another
+protocol in our dataset, allowing us to assess protocol behavior
+under demand levels realized elsewhere in the ecosystem.
+
+2.0
+
+1.5
+
+1.0
+
+0.5
+
+0.0
+Jun 2025
+
+Jul 2025
+
+Aug 2025
+
+Sep 2025
+
+Oct 2025
+
+Figure 6: USDC balances of Across solvers on Ethereum,
+showing volatile liquidity and recurring depletion events.
+framework is to determine whether, and under which conditions, an attacker can temporarily exhaust solver liquidity
+and disrupt intent fulfillment in real protocol deployments.
+The framework is fully parameterized and supports different blockchains, bridge protocols, and economic assumptions.
+The implementation will be made publicly available.
+
+5.1
+
+Simulated vs. Fixed Parameters
+
+5.3
+
+Attack Cost and Outcome Estimation
+
+Since solver implementations and liquidity management
+strategies are not publicly observable, we treat these components using a black-box model. We compute the volume
+and value of historical intents that fail to be fulfilled during the
+attack window due to liquidity exhaustion. This yields conservative estimates of attack profitability: in a live deployment,
+reduced solver competition would likely decrease bidding
+pressure in auctions and yield lower attack costs relative
+to our estimates. In contrast, attack costs are estimated using protocol fee trends and historical gas costs observed at ts ,
+without assuming any favorable pricing for A.
+Solver liquidity fluctuates substantially over time due to
+ongoing fulfillments, delayed refunds, and rebalancing behavior (cf. Figure 6). As a result, identical attack parameters
+can produce markedly different outcomes depending on the
+timing. To account for this variability, all reported results aggregate identical attack configurations across multiple attack
+timestamps within the analysis period, capturing both typical
+and tail behavior (using the 90th percentile), to capture the
+heavy right-skewed distributions.
+
+Design Rationale
+
+We adopt replay-based simulations to avoid assumptions
+about solver behavior, bidding strategies, or liquidity management that are not publicly observable. Grounding simulations
+in historical execution traces, ensures that attack outcomes
+reflect real protocol usage patterns, intent value distributions,
+and solver participation, rather than synthetic behavior. Most
+importantly, the costs incurred by solvers when fulfilling intents (C f ill_intents (t) and ε(t) in Equations 2 and 5, respectively) are exactly the same values that we use to simulate an
+attacker fulfilling exactly the same intent at that time.
+Each simulation is instantiated by a configuration specifying the source blockchain, destination blockchain, bridge
+protocol, attack window duration, and maximum adversarial intent value. Unless explicitly stated otherwise, simulations use real protocol parameters (i.e., the real values of solver profitability, protocol fees, and user costs).
+For example, the configuration SRC_BLOCKCHAIN=solana,
+DST_BLOCKCHAIN=ethereum, and BRIDGE=mayan replays
+historical Mayan Swift transfers from Solana to Ethereum
+without modifying solver margins or user fees. In our experiments, we range ATTACK_WINDOW from 300 to 1000 seconds (we discuss these choices in 10). Additionally, using
+MAX_TX_VALUE=10000 restricts adversarial intents to a maximum value of $10,000 each (this value will tell how many
+intents A needs to create in the flooding phase). Finally,
+VOLUME_MULTIPLIER=1 will force the attacker to use a window multiplier of 1 to preserve the original transaction volume.
+
+6
+
+Baseline Strategy: Median-Deviation Liquidity Trigger
+
+In our baseline strategy, we exploit the naturally occurring
+liquidity fluctuations. Instead of attempting to forecast future
+profitability or solver behavior, A opportunistically triggers
+attacks during periods when solver liquidity is unusually low
+relative to historical levels.
+
+6.1
+
+Attack Model
+
+For each solver s, A observes its historical liquidity time series
+Ls (t). At each timestamp t, A computes the historical median
+liquidity L̃s and standard deviation σs . We use the median
+rather than the mean to mitigate the impact of huge liquidity
+6
+
+injections and intent values that introduce heavy-tailed variability. The objective is to identify periods of low liquidity that
+create adversarial opportunities. Inspired by median-deviation
+outlier detection methods, A triggers an attack whenever:
+Ls (t) < L̃s − k · σs ,
+
+Bridge
+
+(6)
+
+where k ∈ N controls the selectivity of the trigger. Lower
+values of k result in more frequent attacks, while higher values
+isolate rarer but more severe liquidity shortages: with k = 0,
+attacks trigger whenever liquidity falls below the historical
+median; with k = 1, attacks trigger whenever liquidity falls
+below the historical median minus a standard deviation; and
+so on. This strategy requires no forecasting methods and
+exploits periods with severe liquidity shortage during which
+the capital required to exhaust the liquidity is reduced.
+
+6.2
+
+k Mean Net Profit ($) Volume Fulfilled ($) Pr[Profit] Reliable Attack?
+
+Mayan
+0 -295.66 ± 103.60
+Mayan
+1 -195.20 ± 154.37
+Mayan
+2
+-178.68 ± 25.96
+Mayan
+3
+-185.95 ± 3.75
+Across
+0 -2828.81 ± 644.96
+Across
+1 -2828.81 ± 644.96
+Across
+2 -2719.64 ± 559.76
+Across
+3
+0
+Debridge 0 199.77 ± 1316.75
+Debridge 1 286.14 ± 1075.66
+Debridge 2
+203.06 ± 244.56
+Debridge 3
+0
+
+34,989
+37,106
+20,873
+24,086
+218,253
+218,253
+219,901
+0
+138,537
+107,353
+92,623
+0
+
+1.1%
+1.3%
+0.0%
+0.0%
+0.0%
+0.0%
+0.0%
+0
+45.2%
+80.5%
+100.0%
+0
+
+No
+No
+No
+No
+No
+No
+No
+No
+No
+Yes
+Yes
+No
+
+Table 2: Sensitivity of liquidity exhaustion attacks to the attack parameter k for attack window = 1000s, and real protocol
+parameters. Cell shading highlights profitable outcomes and
+high attack reliability.
+Bridge
+
+k Mean Net Profit ($) Volume Fulfilled ($) Pr[Profit] Reliable Attack?
+
+Mayan
+0
+-325.59 ± 74.55
+Mayan
+1
+-229.91 ± 29.67
+Mayan
+2
+-195.97 ± 20.75
+Mayan
+3
+-198.48 ± 8.49
+Across
+0 -2882.98 ± 628.84
+Across
+1 -2882.98 ± 628.84
+Across
+2 -2773.42 ± 542.51
+Across
+3
+0
+Debridge 0 -132.26 ± 505.54
+Debridge 1
+84.41 ± 986.55
+Debridge 2
+-13.91 ± 36.07
+Debridge 3
+0
+
+Optimal Deviation Threshold (k-values)
+
+For each protocol, we vary the deviation threshold k ∈
+{0, 1, 2, 3}. For k = 3, only a small number of extreme liquidity shortages remain, and only for Mayan Swift. For k > 3,
+there are no attack instances returned, i.e., the liquidity is
+never that low.
+Tables 2 and 3 summarize the attack outcomes across opposite attack durations (1000s and 300s, respectively), without
+any simulated parameters. The column Pr[Profit] shows
+the percentage of attacks that yielded (positive) profit, to avoid
+a few isolated intents to boost the overall net profit.
+The results show that, for an attack window of 1000s, deBridge is clearly vulnerable for every k ∈ {1, 2}. For k = 0,
+the attack is performed plenty of times when the liquidity
+is not that low, which increases the total cost of performing
+the attack and returns financial loss. Interestingly, with k = 3,
+the attack is performed fewer times (fulfilling only ≈ 92k
+compared to ≈ 107k transactions in k = 1), but the Pr[profit]
+is 100%. This means that all attack instances returned profit,
+but the total net profit is lower than k = 1, indicating a reliable attack in the long term. In Mayan Swift, there are a few
+instances where attacks are feasible at k = 0 and k = 1, becoming effectively infeasible for higher thresholds. However,
+in the long term, the attack is not reliable because the majority
+of instances return a financial loss. From our investigation,
+there are specific timestamps yielding profit due to high-value
+intents being transacted at that point, which indicates that
+the security of the protocol against a liquidity exhaustion attack is somehow dependent on protocol-external variables,
+such as the user behavior. In order to understand the exact
+impact of different variables in making the attack possible in
+some instances, we study the impact of different parameters
+in the simulations of Section 6.3. Across shows no meaningful attack opportunities for any tested k, even under the most
+permissive trigger, indicating that it is sufficiently stable to
+prevent opportunistic attacks under real operating conditions.
+
+10,589
+10,198
+10,199
+17,449
+63,922
+63,922
+63,414
+0
+41,633
+42,684
+21,051
+0
+
+0.2%
+0.0%
+0.0%
+0.0%
+0.0%
+0.0%
+0.0%
+0
+12.1%
+26.2%
+20.0%
+0
+
+No
+No
+No
+No
+No
+No
+No
+No
+No
+No
+No
+No
+
+Table 3: Sensitivity of liquidity exhaustion attacks to the
+attack aggressiveness parameter k for attack window = 300s.
+Cell shading highlights profitable outcomes and high attack
+reliability.
+In the same timestamp, reducing the attack window from
+1000 s to 600 s or 300 s decreases the volume that can be
+captured by the attacker, which decreases the revenue and
+consequently the profit. Figures 7 and 8 depict the expected
+profitability of attacks as a variable of the attack window
+and the value of k. In deBridge, for k = 2 (the most reliable
+configuration per Table 2), reducing from 1000 s to 600 s
+qualitatively does not change the results. However, reducing
+the window to 300 s (cf. Table 3) largely eliminates profitable
+opportunities, indicating that short-lived liquidity exhaustion
+alone is insufficient to sustain economically viable attacks.
+Main Insights. Under real conditions, a rational attacker using the
+median-deviation strategy is able to reliably extract profit in deBridge in
+the long term. An attack targeting Across is completely unfeasible with
+no instance returning profit due to the very low solver profitability and
+massive liquidity. In Mayan Swift, the attacker could profit in specific
+timestamps due to high-value intents, indicating that the security of the
+protocol is dependent on protocol-external variables.
+
+6.3
+
+Parameter Simulation
+
+For every k and attack window duration, we simulate liquidity
+exhaustion attacks varying the solver profitability, the protocol
+7
+
+Simulated Values
+
+Simulation Results
+
+Bridge
+
+Src → Dst
+
+S Profit.
+
+Prot. Fee
+
+Max Tx Value
+
+Vol Mul
+
+N. Attacks
+
+N. Fulfillments
+
+Volume Fulfilled ($)
+
+Net Profit ($)
+
+Pr[Profit]
+
+mayan
+mayan
+mayan
+mayan
+mayan
+mayan
+mayan
+mayan
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+across
+across
+across
+across
+across
+across
+across
+across
+
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+base → ethereum
+base → ethereum
+base → ethereum
+base → ethereum
+base → ethereum
+base → ethereum
+base → ethereum
+base → ethereum
+
+Real
+0.018
+Real
+Real
+Real
+1.129
+Real
+Real
+0.381
+Real
+Real
+Real
+Real
+0.018
+Real
+Real
+Real
+Real
+Real
+1.129
+Real
+0.381
+Real
+Real
+Real
+
+0.027
+Real
+Real
+Real
+Real
+Real
+1.3
+Real
+Real
+Real
+Real
+0.029
+Real
+Real
+Real
+0.027
+Real
+Real
+Real
+Real
+1.3
+Real
+Real
+Real
+0.029
+
+10000
+10000
+10000
+10000
+100000
+10000
+10000
+10000
+10000
+10000
+10000
+10000
+100000
+10000
+50000
+10000
+10000
+10000
+10000
+10000
+10000
+10000
+10000
+100000
+10000
+
+1
+1
+5.61
+1
+1
+1
+1
+4.237
+1
+0.755
+1
+1
+1
+1
+1
+1
+0.178
+1
+1.323
+1
+1
+1
+0.236
+1
+1
+
+227
+227
+227
+227
+227
+227
+227
+227
+210
+210
+210
+210
+210
+210
+210
+210
+210
+2440
+2440
+2440
+2440
+2440
+2440
+2440
+2440
+
+23.84 ± 7.57
+23.84 ± 7.57
+133.73 ± 42.48
+23.84 ± 7.57
+23.84 ± 7.57
+23.84 ± 7.57
+23.84 ± 7.57
+101.0 ± 32.09
+27.55 ± 8.58
+20.8 ± 6.48
+27.55 ± 8.58
+27.55 ± 8.58
+27.55 ± 8.58
+27.55 ± 8.58
+27.55 ± 8.58
+27.55 ± 8.58
+4.9 ± 1.53
+43.45 ± 11.11
+57.48 ± 14.7
+43.45 ± 11.11
+43.45 ± 11.11
+43.45 ± 11.11
+10.25 ± 2.62
+43.45 ± 11.11
+43.45 ± 11.11
+
+37105.94 ± 48188.45
+37105.94 ± 48188.45
+208164.33 ± 270337.22
+37105.94 ± 48188.45
+37105.94 ± 48188.45
+37105.94 ± 48188.45
+37105.94 ± 48188.45
+157217.87 ± 204174.47
+107352.6 ± 374202.64
+81051.21 ± 282522.99
+107352.6 ± 374202.64
+107352.6 ± 374202.64
+107352.6 ± 374202.64
+107352.6 ± 374202.64
+107352.6 ± 374202.64
+107352.6 ± 374202.64
+19108.76 ± 66608.07
+218253.35 ± 390200.38
+288749.18 ± 516235.1
+218253.35 ± 390200.38
+218253.35 ± 390200.38
+218253.35 ± 390200.38
+51507.79 ± 92087.29
+218253.35 ± 390200.38
+218253.35 ± 390200.38
+
+-178.56 (p90: -145.72)
+-235.15 (p90: -202.77)
+19.74 (p90: 191.13)
+-195.2 (p90: -161.37)
+-201.45 (p90: -165.57)
+177.1 (p90: 852.08)
+-10795.83 (p90: -9500.89)
+-44.27 (p90: 84.48)
+320.24 (p90: 625.91)
+194.29 (p90: 443.7)
+286.14 (p90: 617.46)
+281.55 (p90: 615.17)
+364.77 (p90: 699.83)
+-69.45 (p90: -35.11)
+356.04 (p90: 691.65)
+287.99 (p90: 621.89)
+-22.04 (p90: 41.51)
+-2828.81 (p90: -2076.13)
+-2804.57 (p90: -2041.51)
+-439.79 (p90: 2705.82)
+-87464.8 (p90: -68160.2)
+-2072.32 (p90: -724.92)
+-2886.16 (p90: -2150.51)
+-3157.64 (p90: -1299.29)
+-1877.75 (p90: -1430.73)
+
+1.3%
+0.0%
+23.8%
+1.3%
+1.3%
+48.9%
+0.0%
+17.2%
+72.4%
+67.1%
+80.5%
+77.6%
+99.0%
+1.9%
+99.0%
+80.5%
+18.1%
+0.0%
+0.0%
+23.4%
+0.0%
+6.1%
+0.0%
+0.0%
+0.0%
+
+Note: The table includes both observed and counterfactual parameter configurations. For each protocol, results are reported using its real on-chain parameters,
+as well as simulations where individual economic/usage variables – solver profitability (S Profit.), protocol fee (Prot. Fee), maximum intent value submitted
+(Max Tx Value), and the volume multiplier (Vol Mul) – are replaced with values observed in other protocols. These substitutions allow us to isolate the effect
+of specific parameters on attack outcomes while keeping liquidity dynamics and transaction distributions fixed. Counterfactual rows should be interpreted as
+stress tests rather than expected real-world behavior. Gray table lines mark simulations with the real protocol parameters. Real solver profitability values:
+Mayan 0.381%, DeBridge 1.129%, Across 0.018%. Real protocol fee values: Mayan 0.029%, DeBridge 1.3%, Across 0.027%.
+
+Table 4: Simulation Results for k = 1 and AttWindow = 1000 with Color-Coded Net Profit
+
+Figure 7: Probability that an attack window yields positive
+net profit for deBridge under the median-deviation strategy,
+as a function of deviation threshold k.
+
+Figure 8: Probability that an attack window yields positive net
+profit for Mayan Swift under the median-deviation strategy,
+as a function of deviation threshold k.
+
+fee charged, the maximum value of each created intent, and
+the volume multiplier. Table 4 summarizes the results for
+k = 1. The remaining results will be available in our opensource implementation.
+Mayan Swift. For Mayan, the baseline strategy is generally
+unprofitable, but becomes profitable in a few instances under
+specific parameter combinations, mainly when solver profitability or transaction volume increases. This highlights a key
+trade-off when designing intent-based systems: higher solver
+margins may incentivize participation of more solvers, but
+
+also increase susceptibility to such an attack. When increasing
+the solver profitability from 0.381% to 1.129% (deBridge’s
+value), the attack profitability becomes a concern with ≈ 49%
+of instances returning profit, where the 90th percentile is a
+net profit of $852. Also, the fact that over 20% of the attacks
+performed, considering a 5.61x increase in the intent volume
+(simulating Across’s volume), demonstrates that the risk also
+depends on external usage patterns rather than protocol logic
+alone. This conclusion is in line with the findings obtained in
+Section 6.2.
+8
+
+deBridge. deBridge is the most susceptible protocol under
+the baseline strategy. Across a wide range of parameters,
+simulations yield positive expected net profit, albeit with high
+variance driven by frequent high-value intents. Profitability
+persists even for moderate liquidity deviations, indicating that
+common liquidity dips combined with relatively high solver
+margins enable opportunistic attacks. The only instance where
+the protocol is not subject to such attacks is when the solver
+profitability is simulated to be equal to Across’s, as low as
+0.018% (compared with deBridge’s 1.129%).
+Across. Across consistently yields a negative net profit
+across all evaluated configurations. Extremely low solver margins dominate attacker economics, yielding rational attacks
+unprofitable even when massive transaction volume is captured. Across also maintains substantially higher total liquidity (over $8 million, which is drastically different from Mayan
+and deBridge – cf. Figure 1), which sharply increases the cost
+of the attacks. Keeping solver profitability very low is an effective defense against economically motivated attacks, but it
+risks discouraging participation by making solver operation
+less attractive relative to other opportunities in the ecosystem.
+
+means that, even though the majority of the failed intents are
+pretty low in value and the number of failed intents is not
+substantial, there are users trying to bridge massive amounts
+of funds, and these are impacted by such an attack.
+Although A does not profit, the attack imposes opportunity
+costs on solvers and protocol operators through missed fees
+and profit. Solvers may lose up to almost $1000 in missed
+solver profitability in deBridge, $160 in Across in 1,000 seconds. Mayan Swift has the most modest number of transactions and value transacted, which means that solver profitability rarely goes beyond $100 even in a 1000s window.
+Similarly, protocols can lose up to ≈ $187, ≈ $285, and ≈ $26
+in protocol fees per attack window in deBridge, Across, and
+Mayan, respectively. In terms of attack execution costs, the
+median is approximately $2.8k for Across, $239 for Debridge,
+and $339 for Mayan, largely independent of duration, since
+the full liquidity must be drained in every case.
+
+7.2
+
+Direct vs. Indirect Impact
+
+Byzantine Adversary: Availability Impact
+
+Liquidity exhaustion attacks have both direct and indirect consequences for users and protocols. The direct impact on users
+is immediate: the number of failed intents increases monotonically with the duration of the attack (cf. Figure 9). Across the
+evaluated protocols, the number of failed intents ranges from
+only a few instances in Mayan Swift to nearly one hundred in
+Across, which processes the highest transaction volume. For
+affected users, these failures translate into delayed or reverted
+cross-chain transfers, directly degrading the user experience.
+
+Unlike rational adversaries that seek to optimize profit subject
+to liquidity constraints, a byzantine attacker A is not limited
+by economic incentives and aims to maximize availability
+disruption. A is assumed to prevent solvers from fulfilling intents for the duration of the attack window, resulting in failed
+or delayed intent fulfillments. For each protocol and attack
+window duration, we simulate thousands of attack instances
+at different historical timestamps. Each instance aggregates
+the intents that would fail to be fulfilled within the window,
+producing per-window metrics such as the number of failed intents, the median failed intent value, and the economic impact
+in terms of missed solver profit and protocol fees.
+Table 5 reports distributional summaries across all simulated attack windows, including medians and 90th percentile,
+to capture both typical and worst-case behavior.
+
+Figure 9: Impact of the liquidity exhaustion attack in terms of
+the number of user intents rejected by Across protocol.
+
+Main Insights. With volatile liquidity and sufficiently high solver profitability, naturally occurring liquidity dips alone can enable economically viable attacks using the baseline strategy. Conversely, consistently
+low solver margins act as the strongest defense strategy. These findings
+motivate more selective attacker strategies, which we explore next.
+
+7
+
+7.1
+
+At the protocol level, as shown by Table 5, the direct financial impact is limited. During attack windows, protocols
+miss a small amount of fee revenue due to unfulfilled intents.
+However, these losses are negligible compared to the total
+value processed by each protocol, which is on the order of
+millions or billions of USD [5]. As a result, liquidity exhaustion attacks do not pose an existential financial threat solely
+through lost fees. The most significant risk lies in the indirect
+
+Availability and Economic Impact
+
+Failed intent values exhibit heavy-tailed behavior: median
+values remain modest between the $74 and $200, while 90th
+percentiles range from ≈ $223 to ≈ $1200. In order to show
+the high variability of the value of intents processed by protocols, we show the standard deviation of every attack window,
+and show that the 90-percentile ranges from $5k to $43k. This
+9
+
+Bridge
+across
+across
+across
+debridge
+debridge
+debridge
+mayan
+mayan
+mayan
+
+Att. Window (s)
+
+Total Cost ($)
+
+Failed Intent Value ($)
+
+Failed Intent Value Std ($)
+
+Failed Intents
+
+Missed Solver Profit ($)
+
+Missed Protocol Fees ($)
+
+200
+600
+1000
+200
+600
+1000
+200
+600
+1000
+
+2891.80 / 3658.51
+2886.00 / 3654.33
+2886.00 / 3654.33
+239.45 / 397.01
+239.45 / 395.56
+239.45 / 395.56
+339.89 / 444.50
+337.30 / 440.16
+337.35 / 440.12
+
+116.82 / 644.94
+107.60 / 347.08
+109.68 / 295.54
+197.83 / 1216.04
+173.21 / 515.42
+174.52 / 450.83
+84.03 / 546.91
+79.27 / 285.74
+74.28 / 223.65
+
+1592.57 / 26809.87
+5083.01 / 37535.04
+8178.19 / 43597.76
+1235.78 / 20452.17
+3306.75 / 28230.67
+4992.74 / 34177.23
+392.51 / 5510.47
+1308.09 / 10718.09
+1944.28 / 13025.88
+
+8.0 / 13.0
+25.0 / 36.0
+42.5 / 58.0
+5.0 / 9.0
+16.0 / 25.0
+27.0 / 40.0
+5.0 / 8.0
+13.0 / 22.0
+23.0 / 35.0
+
+3.95 / 27.66
+16.74 / 99.60
+34.89 / 161.67
+27.37 / 200.99
+113.28 / 561.47
+212.10 / 978.97
+3.12 / 15.36
+11.98 / 57.52
+21.76 / 89.05
+
+12.27 / 55.75
+46.01 / 171.71
+83.40 / 285.75
+19.75 / 41.17
+61.03 / 116.38
+104.75 / 187.98
+0.36 / 4.76
+2.26 / 15.84
+4.74 / 26.25
+
+Table 5: Median and tail (90th percentile) impact of byzantine solver-suppression attacks aggregated across attack windows.
+impact. Cross-chain bridges increasingly serve as infrastructure for aggregation services, including DEX aggregators and
+bridge aggregators [24], which rely on high availability and
+correct fulfillment of transactions to route user transactions
+(according to our data, only around 25.23% of the intents
+processed by Across do not come from these third-party services). Even short-lived availability failures can cause these
+aggregation services to route traffic away from a protocol due
+to perceived unreliability [19], reducing future transaction
+flow and harming long-term adoption.
+
+To concretely evaluate the targeted strategy, we focus on
+specific intent classes described below.
+Mayan Swift. We consider transactions of USDC in Mayan
+Swift with an intent value lower than $100. This class is particularly suitable for studying targeted attacks for three reasons.
+First, USDC is one of the most commonly used destination
+tokens on Mayan Swift, ensuring sufficient data for statistical analysis. Second, intents below $100 exhibit reduced
+solver competition compared to higher-value transfers (cf.
+Figure 10). Third, while individual intent values are small,
+these intents occur frequently (cf. Table 1), making them relevant from an availability perspective even if profit potential
+is limited. From our data analysis, we found the following
+patterns: (1) 0xdfd122...72708116 does not bid on intents
+lower than $100. Its total liquidity sits between ≈ $500, 000
+and ≈ $1, 000, 000 in the interval under analysis; (2) solvers
+0xcbb0cb...5807ff96 and 0x38bf02...6b5851ff only made bids
+and fulfillments at the beginning of the interval of analysis
+and were kept deactivated until the end. We also noted that
+solver 0x7c825c...a00b7f6b had occasional periods of inactivity. However, since these periods were not predictable, an
+attacker could not leverage that information prior to performing an attack. With the information above, we exclude the
+total liquidity of the solvers where patterns can be observed,
+resulting in a decrease in the total liquidity that needs to
+be temporarily drained by A. Recalling the liquidity exhaustion parameter α introduced in Equation 1, under the patterns
+above for Mayan Swift and k = 2, the median value of α is
+0.075 – i.e., the attacker is only required to exhaust ≈ 7.5%
+($57k) of the total liquidity available).
+deBridge. Similarly to Mayan Swift, solver participation
+in deBridge exhibits strong intent value-based trends. We
+focus on USDC intents with token values above $500,
+which reduces the number of competing solvers. USDC is
+the most frequently used token in deBridge, ensuring sufficient data for analysis. Solvers 0xc4eb49...a0bfbd97 and
+0x78b0f4...c2c0082e exclusively bid on and fulfill USDC intents with values below $500 and do not participate in highervalue transfers. In contrast, the solver 0x555ce2...210cc35b
+remains consistently active throughout the interval and fulfills
+intents throughout the entire value range. Under these parameters and k = 1 (k = 2 did not yield results), the median value
+of α is 0.129 – i.e., the attacker is only required to exhaust
+
+Main Insights. A byzantine adversary can degrade availability across
+all evaluated intent-based bridges, causing dozens of failed intents per
+attack window and affecting high-value transfers due to the heavytailed distribution of intent values. Although direct financial losses to
+solvers and protocols are modest, even short-lived disruptions pose
+a broader systemic risk by harming user experience and potentially
+generating lasting reputational and ecosystem-level consequences.
+
+8
+
+Targeted Liquidity Exhaustion Attacks
+
+The baseline strategy introduced in Section 6 relies on solver
+liquidity statistics and exploits naturally occurring liquidity
+dips. Although effective, this approach implicitly assumes that
+all solvers compete uniformly across all intents, and therefore
+all liquidity needs to be temporarily drained.
+
+8.1
+
+Solver Participation Patterns
+
+In practice, solver participation is highly structured and depends on intent-specific attributes. We therefore introduce a
+targeted attack strategy that exploits these participation patterns. By targeting specific intent characteristics where not
+all solvers compete in the auction, the attacker only needs to
+consider the liquidity of the competing solvers, which substantially reduces the cost of the attack. These patterns focus
+on three dimensions:
+• intent value thresholds, as solvers selectively compete
+on specific value ranges of intents.
+• solver activity windows, because some solvers are not
+continuously active and temporarily halt bidding.
+• token specialization, whereby solvers compete only on
+a subset of tokens.
+10
+
+5
+
+below $100). Although targeting successfully reduces the liquidity that must be drained, the attainable solver revenue is
+inherently capped by the small transaction sizes. As a result,
+cost reductions alone are insufficient to make the attack economically viable. These findings suggest that Mayan Swift is
+structurally resilient to targeted liquidity exhaustion attacks
+when low-value intents dominate the attack surface.
+deBridge. In contrast, deBridge exhibits strong susceptibility to targeted attacks. Under real protocol parameters, the
+attack yields a mean net profit of up to $210 with near-certain
+long-term profitability (96 – 100%). Even when transaction
+volume is reduced (volume multiplier 0.178), the attack remains profitable ($20.94 mean profit with 67% success probability). The primary driver of the success is the high value
+of captured intents: the attacker fulfills on average $86k per
+window, over two orders of magnitude higher than in Mayan
+Swift. Consequently, even moderate solver margins generate
+sufficient revenue to offset attack costs. Profitability persists
+across most stress-test configurations, including higher protocol fees and alternative solver profitability assumptions. Only
+when solver profitability is drastically reduced (0.018%) does
+the attack become borderline unprofitable, reinforcing the importance of solver margins as a first-order security parameter.
+
+105
+4
+
+3
+
+Solver Address
+
+Intent Value (USD)
+
+104
+103
+102
+
+2
+
+101
+1
+
+100
+01 Jun
+
+05 Jun
+
+09 Jun
+
+13 Jun
+
+17 Jun
+
+21 Jun
+
+25 Jun
+
+29 Jun01 Jul
+
+0
+
+Figure 10: Scatter plot of auction bids for the top 5 solvers of
+Mayan Swift in June 2025. Each dot represents a bid colored
+by the solver address.
+≈ 12.9% ($41k) of the total liquidity available.
+Across. Unlike other protocols, Across does not exhibit
+clear solver participation patterns. Although some solvers
+are active only intermittently, their behavior is insufficiently
+predictable to enable reliable targeting strategies.
+
+8.2
+
+Targeted Attack Model
+
+Main Insights. The targeted strategy is radically constrained by the
+economic value of the intents captured. Reducing the competing liquidity is necessary but not sufficient for profitability, as high transaction
+values and solver margins remain decisive factors. However, these
+results reinforce our earlier insight that protocol security depends heavily on external usage patterns rather than protocol mechanics alone.
+Protocols processing large, high-margin transfers are inherently more
+exposed to economically motivated attackers.
+
+We extend the model in Section 6 by conditioning solver
+liquidity on intent characteristics. Let S denote the set of all
+solvers, and S (c) ⊆ S be the subset of solvers that historically
+compete for intents of class c, where c encodes the intent
+value threshold, solver activity windows, and tokens used.
+Let S (c) denote solvers that historically compete for intent
+class c. The effective competing liquidity is:
+Leff (c,t) =
+
+∑ Ls (t).
+
+(7)
+
+8.4
+
+s∈S (c)
+
+Figure 11 compares the min, max and median value of the
+total cost of an attack in the baseline and targeted strategies
+for k ∈ {0, 1, 2} in Mayan Swift. This optimized strategy massively reduces the attack costs. As an example, for k = 2, the
+minimum cost for performing the attack against Mayan Swift
+decreased from $175 to $7, while the maximum reduced from
+$247 to $25. In deBridge, for k = 0 and k = 1, the maximum
+dropped 90.41% ($1507.32 to $144.56) and 77.19% ($158.31
+to $57.17), respectively. The mean reduced 77.19% ($266.38
+to $60.76) and 80.74% ($88.77 to $17.10), respectively.
+
+Similarly to the baseline strategy, A triggers a targeted
+attack whenever:
+Leff (c,t) < L̃eff (c) − k · σeff (c),
+
+8.3
+
+Massive Attack Cost Reduction
+
+(8)
+
+Simulation Results
+
+Table 6 summarizes the results of the targeted attack strategy under the same baseline parameters (k = 1, 1000s attack
+window). Overall, targeting solver participation substantially
+reduces attack costs, but does not uniformly translate into
+profitable attacks across protocols.
+Mayan Swift. The targeted strategy remains largely unprofitable. In all configurations, the mean net profit ranges
+from approximately -$31 to -$15, with profitability probabilities below 25%. Even when transaction volume is artificially
+increased (e.g., volume multiplier of 5.61), expected profit
+remains negative, although the upper tail becomes marginally
+positive (p90 ≈ $17). This outcome is primarily driven by
+the low economic value of the target intent class (transfers
+
+Main Insights. Regardless of the motivation of the attacker (i.e., rational or byzantine), the targeted attack strategy is able to reduce the
+minimum, median, and maximum cost of performing an attack on
+Mayan Swift by 97.18%, 90.24%, and 82.7%, respectively.
+
+9
+
+Defense Strategies
+
+Liquidity exhaustion attacks exploit a core property of intentbased bridges: solvers front liquidity and wait for asyn11
+
+Simulated Values
+
+Simulation Results
+
+Bridge
+
+Src → Dst
+
+S Profit.
+
+Prot. Fee
+
+Max Tx Value
+
+Vol Mul
+
+N. Attacks
+
+N. Fulfillments
+
+Volume Fulfilled ($)
+
+Net Profit ($)
+
+Pr[Profit]
+
+mayan
+mayan
+mayan
+mayan
+mayan
+mayan
+mayan
+mayan
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+debridge
+
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+solana → ethereum
+
+Real
+0.018
+Real
+Real
+Real
+1.129
+Real
+Real
+Real
+Real
+Real
+0.381
+Real
+Real
+0.018
+Real
+Real
+
+0.027
+Real
+Real
+Real
+Real
+Real
+1.3
+Real
+Real
+Real
+0.029
+Real
+0.027
+Real
+Real
+Real
+Real
+
+10000
+10000
+10000
+10000
+100000
+10000
+10000
+10000
+10000
+10000
+10000
+10000
+10000
+100000
+10000
+50000
+10000
+
+1
+1
+5.61
+1
+1
+1
+1
+4.237
+0.755
+0.178
+1
+1
+1
+1
+1
+1
+1
+
+514
+514
+514
+514
+514
+514
+514
+514
+100
+100
+100
+100
+100
+100
+100
+100
+100
+
+4.36 ± 3.41
+4.36 ± 3.41
+24.45 ± 19.13
+4.36 ± 3.41
+4.36 ± 3.41
+4.36 ± 3.41
+4.36 ± 3.41
+18.46 ± 14.45
+5.1 ± 2.38
+1.2 ± 0.56
+6.75 ± 3.15
+6.75 ± 3.15
+6.75 ± 3.15
+6.75 ± 3.15
+6.75 ± 3.15
+6.75 ± 3.15
+6.75 ± 3.15
+
+128.78 ± 117.4
+128.78 ± 117.4
+722.48 ± 658.6
+128.78 ± 117.4
+128.78 ± 117.4
+128.78 ± 117.4
+128.78 ± 117.4
+545.66 ± 497.42
+65175.36 ± 116289.88
+15365.85 ± 27416.69
+86324.98 ± 154026.34
+86324.98 ± 154026.34
+86324.98 ± 154026.34
+86324.98 ± 154026.34
+86324.98 ± 154026.34
+86324.98 ± 154026.34
+86324.98 ± 154026.34
+
+-25.21 (p90: -7.7)
+-31.03 (p90: -11.44)
+-15.59 (p90: 17.36)
+-28.3 (p90: -8.84)
+-28.2 (p90: -8.72)
+-29.6 (p90: -10.09)
+-1343.87 (p90: -494.1)
+-19.38 (p90: 8.55)
+144.23 (p90: 275.41)
+20.94 (p90: 42.78)
+197.22 (p90: 373.53)
+311.8 (p90: 664.96)
+198.36 (p90: 375.74)
+210.4 (p90: 405.83)
+-1.56 (p90: 20.8)
+208.99 (p90: 400.77)
+196.59 (p90: 374.79)
+
+2.1%
+0.0%
+24.1%
+1.8%
+1.8%
+0.0%
+0.0%
+17.9%
+96.0%
+67.0%
+96.0%
+97.0%
+96.0%
+100.0%
+34.0%
+100.0%
+96.0%
+
+Table 6: Results for k = 1 and AttWindow = 1000s with color-coded net profit considering USDC transfers of less than $100 in
+Mayan Swift and USDC transfers of over $500 in deBridge. Gray rows mark simulations with the real protocol parameters.
+600
+500
+
+Total Attack Cost (USD)
+
+cate that solver rebalancing and liquidity injections are largely
+manual and weakly correlated with low-liquidity conditions
+(cf. Figure 5). Automating rebalancing, either across chains
+or from external liquidity sources, can substantially reduce
+the duration of exploitable liquidity dips. Although small reductions in downtime have a limited impact, fully automated
+responses can significantly reduce the probability of success
+of the attack by shortening the attack window.
+Dynamic Fee Adjustment. Similar to congestion pricing [8]
+or lending protocols interest rate calculation [20], intents that
+consume large amounts of liquidity should be more expensive, and changing protocol fees based on the total liquidity
+available. At the same time, from our measurements, very low
+solver profitability turns the attack practically infeasible. The
+sweat spot between low solver profitability, but still attracts
+new entities to act as solvers, needs to be researched.
+Solver Diversity and Liquidity Scale. Solver concentration
+amplifies the impact of liquidity exhaustion attacks. Increasing solver diversity and, most importantly, the total available
+liquidity, raises the cost of performing the attack.
+Discussion. No mitigation fully prevents liquidity exhaustion attacks without sacrificing some benefits of intent-based
+designs. Instead, effective defense requires both protocol-level
+safeguards and solver-side operational practices. Our results
+suggest that maintaining low solver profitability, reducing settlement latency, and increasing total liquidity are among the
+most effective strategies against rational attackers.
+
+Baseline (k=0)
+Baseline (k=1)
+Baseline (k=2)
+Targeted (k=0)
+Targeted (k=1)
+Targeted (k=2)
+
+400
+300
+200
+100
+0
+
+Max
+
+Mean
+
+Statistic
+
+Min
+
+Figure 11: Cost comparison between baseline (rational and
+byzantine) and targeted strategies for attacks to Mayan Swift.
+chronous settlement. As a result, defenses must preserve
+solver liquidity and protocol availability without sacrificing
+the low-latency that motivated intent-based protocols. Below,
+we discuss several defense strategies based on our results.
+Liquidity-Aware Rate Limiting. A first option is to ratelimit intent fulfillment based on available solver liquidity. Although liquidity-aware throttling can prevent complete liquidity shortages, it does not eliminate the possibility of the attack,
+as adversaries can still exploit naturally occurring liquidity
+dips. Such mechanisms reduce throughput when demand is
+high, exchanging availability failures for a slower service.
+Accelerated or Conditional Refunds. Reducing refund
+times (by enabling partial or conditional refunds) directly
+shrinks the attack window, and thus lowers attacker profitability. However, changing the refund time window is a difficult
+security challenge. Refunds are dependent on the time needed
+to validate the cross-chain transaction and ensure the finality
+of the transaction on the source blockchain.
+Automated Solver Rebalancing. Our measurements indi-
+
+10
+
+Discussion
+
+In this section, we discuss our findings and some limitations.
+In this paper, we show that risk can emerge even in the absence of software vulnerabilities or adversarial manipulation
+of protocol logic. We also show that, in some cases, internal
+parameters alone are insufficient to safeguard solvers and pro12
+
+tocols. In these instances, protocol security depends heavily
+on external factors such as transaction volume, intent value
+distributions, and temporal demand patterns. This external
+dependency challenges the notion that intent-based protocols
+can be secured solely through internal parameter tuning.
+Even when an attack is not profitable, byzantine adversaries
+can degrade availability by suppressing solver participation,
+and cause substantial indirect effects. Bridges increasingly
+compete for order flow routed by aggregators that prioritize
+reliability. Short-lived disruptions can cause reputational damage and persistent traffic loss. Risk is further amplified by
+the heavy-tailed distribution of intent values. Although most
+failed intents are small (cf. Section 5), a few high-value transfers dominate user impact. Security outcomes are thus shaped
+more by tail events than by average behavior.
+Solver profitability is very influential in the success of liquidity exhaustion attacks. Low margins discourage economically rational attackers but may also reduce solver participation, revealing an inherent trade-off between economic viability of a project and resilience to attacks. Our findings suggest
+that mitigating liquidity exhaustion requires both protocollevel safeguards and solver-side operational practices. Mechanisms inspired by usual defenses, such as rate limiting, circuit breakers, and risk-adjusted pricing, could limit exposure
+during liquidity stress. Complementary accounting-based approaches, including solver balance invariants, may further
+constrain the conditions under which liquidity shortages propagate into protocol-wide failures. Together, these strategies
+point toward liquidity-aware architectures that treat capital
+constraints as an explicit component of system security.
+Limitations. Liquidity exhaustion attacks require multiple
+conditions to align, including sufficient transaction volume
+and limited liquidity rebalancing, and may not persist under
+rapidly changing market conditions. Our replay framework
+models solvers as black boxes and does not capture adaptive
+responses such as surge pricing, throttling, or rapid capital
+injection. However, we focus on short attack windows, under
+1,000 seconds, based on the solver refund time in Table 1.
+Although Across, theoretically, has a much longer settlement
+period (2 hours), we believe sustained liquidity shortages over
+such intervals without intervention are unrealistic.
+A broader challenge is the limited observability of solver
+behavior: liquidity policies, rebalancing strategies, and risk
+thresholds are not public. By relying exclusively on on-chain
+data, our framework mirrors what real adversaries see. While
+this abstraction prevents precise prediction, our data-driven
+patterns show that liquidity exhaustion is a credible risk for
+protocol designers and operators.
+
+11
+
+classes [4]. We build on these foundations by examining an
+underexplored risk in intent-based protocols: the temporary
+exhaustion of solver liquidity. Related liquidity-driven attacks
+have previously been identified. In Hash Time Locked Contracts (HTLCs), adversaries can immobilize counterparties’
+funds through Griefing or Sore Loser Attacks [17, 18, 26],
+while payment channel networks have been shown to suffer
+channel depletion attacks that restrict routing capacity [23].
+Intent-based systems shift execution off-chain into competitive markets where solvers submit bids to satisfy user intents.
+Chitra et al. [11] provide one of the first analyses of intentbased market mechanisms, and Canidio and Henneke [9]
+study the economics of trade-intent auctions. Additional
+work explores decentralized solver architectures and emerging
+standardization efforts [16], but largely abstracts away from
+solver balance-sheet constraints and their interaction with delayed settlement. Yuminaga et al. [27] show that solver-based
+DEXes can improve execution welfare relative to AMMbased designs. Finally, research on maximal extractable value
+(MEV) primarily characterizes adversarial profit opportunities
+arising from transaction ordering [14,22]. In contrast, we consider rational adversaries that exploit volatile solver liquidity
+and settlement delays rather than transaction ordering.
+To our knowledge, this paper is the first to systematically
+study liquidity exhaustion as an attack vector in intent-based
+cross-chain protocols. We show how delayed settlement and
+finite solver capital can be leveraged to induce protocol-level
+availability failures, even without network congestion or smart
+contract vulnerabilities.
+
+12
+
+Conclusion
+
+Intent-based cross-chain bridges mark a shift in interoperability design, prioritizing speed and user experience over synchronous verification. We show that this shift introduces vulnerabilities rooted in solver liquidity.Through empirical analysis of millions of cross-chain intents and replay-based simulations, we propose liquidity exhaustion attacks and demonstrate their feasibility in current deployments. Exploiting natural liquidity fluctuations can disrupt availability and, under some circumstances, generate profit. Vulnerability varies
+significantly across protocols, with low solver margins discouraging rational attackers, while higher profitability and
+liquidity concentration increase risk. Surprisingly, security
+often depends more on external factors, such as traffic patterns and solver behavior, than on protocol parameters alone.
+Mitigating these risks requires both protocol-level safeguards
+and solver-side practices, including automated rebalancing,
+faster refunds, and liquidity-aware rate limiting. More broadly,
+our findings position liquidity exhaustion as a fundamental
+availability risk that should be treated as a first-class security
+consideration in the design of future intent-based systems.
+
+Related Work
+
+Prior work has extensively studied blockchain interoperability, including cross-chain communication [28], bridge architectures [6], trust assumptions [7], and known vulnerability
+13
+
+References
+
+[13] DefiLlama. Bridge volume – defillama, 2026. URL:
+https://defillama.com/bridges.
+
+[1] The open intents framework: permissionless, crosschain interop to all chains. URL: www.openintent
+s.xyz/.
+
+[14] Christof Ferreira Torres, Albin Mamuti, Ben Weintraub,
+Cristina Nita-Rotaru, and Shweta Shinde. Rolling in the
+shadows: Analyzing the extraction of mev across layer-2
+rollups. In Proceedings of the 2024 on ACM SIGSAC
+Conference on Computer and Communications Security,
+CCS ’24, page 2591–2605, New York, NY, USA, 2024.
+Association for Computing Machinery. doi:10.1145/
+3658644.3690259.
+
+[2] Across. Uniswap bridge: Seamless token transfers, powered by across, 2025. URL: https://across.to/bl
+og/uniswap-bridge.
+[3] Alchemy. Token price API, 2026. URL: https://www.
+alchemy.com/blog/prices-api.
+
+[15] Wormhole Foundation. Wormhole documentation, 2026.
+URL: https://wormhole.com/docs/.
+
+[4] Andre Augusto, Rafael Belchior, Miguel Correia, André
+Vasconcelos, Luyao Zhang, and Thomas Hardjono. Sok:
+Security and privacy of blockchain interoperability. In
+2024 IEEE Symposium on Security and Privacy (SP),
+pages 234–234, Los Alamitos, CA, USA, may 2024.
+IEEE Computer Society.
+
+[16] Rishabh Gupta. A decentralised solver architecture for
+executing intents on evm blockchain, September 2023.
+https://ethresear.ch/t/a-decentralised-sol
+ver-architecture-for-executing-intents-o
+n-evm-blockchain/16608.
+
+[5] André Augusto, André Vasconcelos, Miguel Correia, and Luyao Zhang. Xchaindatagen: A crosschain dataset generation framework. arXiv preprint
+arXiv:2503.13637, 2025.
+
+[17] Maurice Herlihy. Atomic cross-chain swaps. In Proceedings of the 2018 ACM symposium on principles of
+distributed computing, pages 245–254, 2018.
+
+[6] Rafael Belchior, Luke Riley, Thomas Hardjono, André Vasconcelos, and Miguel Correia. Do you need a
+distributed ledger technology interoperability solution?
+Distributed Ledger Technologies: Research and Practice, 2(1):1–37, 2023.
+
+[18] Subhra Mazumdar. Towards faster settlement in htlcbased cross-chain atomic swaps. In 2022 IEEE 4th
+international conference on trust, privacy and security
+in intelligent systems, and applications (TPS-ISA), pages
+295–304. IEEE, 2022.
+
+[7] Rafael Belchior, André Vasconcelos, Sérgio Guerreiro,
+and Miguel Correia. A survey on blockchain interoperability: Past, present, and future trends. Acm Computing
+Surveys (CSUR), 54(8):1–41, 2021.
+
+[19] Angela Potter. How we selected bridge providers for
+metamask bridges, November 2022. URL: https://
+metamask.io/news/how-we-selected-bridge-p
+roviders-for-metamask-bridges.
+
+[8] Vitalik Buterin, Eric Conner, Rick Dudley, Matthew Slipper, Ian Norden, and Abdelhamid Bakhta. EIP-1559:
+Fee market change for ETH 1.0 chain. Ethereum Improvement Proposals, 2019.
+
+[20] Aave Protocol. Liquidity pool | aave protocol documentation. URL: https://docs-aave.vercel.app/doc
+s/aave-v3/concepts/liquidity-pool.
+[21] Across Protocol. Fast, cheap, secure crosschain bridge
+for eth, wbtc, usdc & usdt | across protocol. URL: http
+s://across.to/.
+
+[9] Andrea Canidio and Felix Henneke. Combinatorial
+auctions without a numeraire: The case of blockchain
+trade-intent auctions. arXiv preprint arXiv:2408.12225,
+(arXiv:2408.12225), August 2024. arXiv:2408.12225
+[econ]. URL: http://arxiv.org/abs/2408.12225,
+doi:10.48550/arXiv.2408.12225.
+
+[22] Kaihua Qin, Liyi Zhou, and Arthur Gervais. Quantifying
+blockchain extractable value: How dark is the forest? In
+2022 IEEE Symposium on Security and Privacy (SP),
+pages 198–214. IEEE, 2022.
+
+[10] Arjun Chand. Li.fi - with intents, it’s solvers all the way
+down. URL: https://li.fi/knowledge-hub/wit
+h-intents-its-solvers-all-the-way-down.
+[11] Tarun Chitra, Kshitij Kulkarni, Mallesh Pai, and Theo
+Diamandis. An analysis of intent-based markets. arXiv
+preprint arXiv:2403.02525, 2024.
+
+[23] Elias Rohrer, Julian Malliaris, and Florian Tschorsch.
+Discharged payment channels: Quantifying the lightning network’s resilience to topology-based attacks. In
+2019 ieee european symposium on security and privacy
+workshops (euros&PW), pages 347–356. IEEE, 2019.
+
+[12] deBridge. What is debridge? URL: https://docs.d
+ebridge.com.
+
+[24] Shankar Subramanian, André Augusto, Rafael Belchior,
+André Vasconcelos, and Miguel Correia. Benchmarking
+14
+
+blockchain bridge aggregators. In 2024 IEEE International Conference on Blockchain (Blockchain), pages
+37–45, 2024. doi:10.1109/Blockchain62396.2024
+.00015.
+
+Source Transaction (order)
+blockchain
+transaction_hash
+from
+to
+fee
+value
+timestamp
+
+[25] WormholeScan. Wormholescan | protocols stats. URL:
+https://wormholescan.io/#/analytics/protoc
+ols.
+
+Destination Transaction (fulfillment)
+blockchain
+transaction_hash
+from
+to
+fee
+value
+timestamp
+
+[26] Yingjie Xue and Maurice Herlihy. Hedging against
+sore loser attacks in cross-chain transactions. In Proceedings of the 2021 ACM Symposium on Principles of
+Distributed Computing, pages 155–164, 2021.
+[27] Yuki Yuminaga, Dex Chen, and Danning Sui. Execution welfare across solver-based dexes. arXiv preprint
+arXiv:2503.00738, 2025.
+
+Blockchain on which repayment occurs.
+Unique ID of the repayment transaction.
+Solver address requesting the repayment.
+Settlement contract address.
+Fee paid validators/miners for this transaction.
+Native value transferred in this transaction.
+Repayment transaction timestamp.
+
+Intent Information
+intent_id
+auction_id
+depositor
+recipient
+src_contract_address
+dst_contract_address
+input_amount
+input_amount_usd
+output_amount
+output_amount_usd
+refund_amount
+refund_amount_usd
+refund_token
+quote_timestamp
+fill_deadline
+exclusivity_deadline
+exclusive_relayer
+native_fix_fee
+native_fix_fee_usd
+percent_fee
+percent_fee_usd
+
+Cross-Chain Transactions Data Format
+
+Each cross-chain transaction contains information about the
+intent issued by the user, the fulfillment by the solver, and the
+repayment transaction. Table 7 shows a simplified description
+of the cross-chain transactions data structure.
+
+B
+
+Destination chain where funds are released.
+Unique ID of the transaction on the destination chain.
+Solver address performing the fulfillment.
+Target address of the destination chain.
+Fee paid validators/miners for this transaction.
+Native value transferred in this transaction.
+Destination transaction timestamp.
+
+Repayment Transaction
+blockchain
+transaction_hash
+from
+to
+fee
+value
+timestamp
+
+[28] Alexei Zamyatin, Mustafa Al-Bassam, Dionysis Zindros,
+Eleftherios Kokoris-Kogias, Pedro Moreno-Sanchez,
+Aggelos Kiayias, and William J Knottenbelt. Sok: Communication across distributed ledgers. In International
+Conference on Financial Cryptography and Data Security, pages 3–36. Springer, 2021.
+
+A
+
+Origin chain where the user deposits funds.
+Unique ID of the transaction on the source chain.
+User address that initiated the source transaction.
+Target address of the source transaction.
+Fee paid to validators/miners for this transaction.
+Native value transferred in this transaction.
+Source transaction timestamp.
+
+Solver Addresses
+
+Table 8 presents all solver addresses identified in our dataset,
+that fulfilled user intents in Ethereum.
+
+Unique intent ID.
+Identifier of the auction for this intent.
+User address sending tokens.
+User address receiving tokens.
+Address of the original token contract.
+Address of the destination token contract.
+Tokens sent.
+Value sent in USD.
+Tokens received.
+Value received in USD.
+Refunded tokens.
+Refunded value in USD.
+Token refunded.
+Timestamp of the quote generation.
+Deadline to fill intent.
+Deadline for exclusive relayer.
+Assigned exclusive solver.
+Fixed fee charged by the protocol in native token.
+Fixed fee charged by the protocol in USD.
+Percentage fee charged by the protocol.
+Percentage fee charged by the protocol in USD.
+
+Additional Fields
+fill_latency
+refund_latency
+auction_duration
+auction_start_latency
+adjusted_refund_fee_usd
+adjusted_dst_fee_usd
+solver_profitability
+solver_profitability_pct
+user_paid_protocol_fees_usd
+user_paid_protocol_fees_pct
+intent_value_usd
+src_symbol
+dst_symbol
+middle_src_symbol
+middle_dst_symbol
+middle_src_token
+middle_src_amount
+middle_src_amount_usd
+middle_dst_token
+middle_dst_amount
+middle_dst_amount_usd
+bridge
+
+Time taken to fulfill the intent.
+Time taken to refund user.
+Duration of solver auction.
+Timestamp of the start of the auction.
+Refund fee in USD adjusted due to batching.
+Destination fee in USD adjusted due to batching.
+Absolute solver profit in USD.
+Solver profit as percent.
+Protocol fees paid by the user in USD.
+Protocol fees paid by ther user as percent.
+Intent value in USD.
+Source token symbol.
+Destination token symbol.
+Middle source token (if there is a swap).
+Middle destination token (if there is a swap).
+Middle source token.
+Amount of middle source token.
+Amount of middle source in USD.
+Middle destination token.
+Amount of middle destination token.
+Amount of middle destination in USD.
+Bridge used.
+
+Table 7: Data model used for an intent-based cross-chain
+transaction with additional metdadata
+
+15
+
+Mayan
+0x6ffc5848c46319e7c6d48f56ca2152b213d4535f
+0x466b037ace44c0134dcebd965a4a22aed6dea027
+0xdfd122610a14ac12d934898c02dbec1f72708116
+0x7c825c6e7e4e1f618ca67e4943cdb41ca00b7f6b
+0x2977b8919df6a60e93089e0f4231a28899005302
+0x89c352c56c2caddbb4585731609802fb40867965
+0x38bf020e39e5a3ef1519c1283f6cac8a6b5851ff
+0xcbb0cb4492afbcd9963441cc6aea50f35807ff96
+0x7c825c6E7E4e1F618Ca67E4943CDb41CA00B7f6B
+0xDfd122610A14Ac12D934898c02dBEc1f72708116
+0x6Ffc5848c46319e7C6D48f56cA2152B213d4535F
+0x2977b8919dF6A60E93089E0F4231A28899005302
+0xcBb0cb4492afbCD9963441cC6AeA50F35807fF96
+0x466B037ace44C0134Dcebd965A4a22Aed6DEA027
+deBridge
+0x555ce236c0220695b68341bc48c68d52210cc35b
+0x1c43ee851156a6ebc643b6a6b13413dcd479fc96
+0xc4eb49ea01578cb9b1c68ad27f457dbfa0bfbd97
+0x78b0f42536aeee037deedbb968ffb23cc2c0082e
+0x1155b614971f16758c92c4890ed338c9e3ede6b7
+0x7185b9c0c4ffa4eec6ecf100c5bc3583065002ab
+0x41bc52b02a0f7604cc6fb59ea49e261b60f3ec34
+0x98ab320ad1f8459d9ea2e83e1fc3ea80504f0eae
+0x555CE236C0220695b68341bc48C68d52210cC35b
+Across
+0xeff7337b37c8d217d01cb8223fe497abd75190d5
+0xcad97616f91872c02ba3553db315db4015cbe850
+0x394311a6aaa0d8e3411d8b62de4578d41322d1bd
+0x699ee12a1d97437a4a1e87c71e5d882b3881e2e3
+0xef1ec136931ab5728b0783fd87d109c9d15d31f1
+0x41ee28ee05341e7fdddc8d433ba66054cd302ca1
+0xeeaf25ad4f51fe2f57be2f206c9d8a568a618b99
+0x84a36d2c3d2078c560ff7b62815138a16671b549
+0x18105a39db36eb6f865704be858bcc7954c66467
+0x4d38a9e742450872ed777c4df3cef7d5cbe8e3a8
+0x15652636f3898f550b257b89926d5566821c32e1
+0xA36bc6867c9963DE1a5dAaF7882efb5B56899E8c
+0xa36bc6867c9963de1a5daaf7882efb5b56899e8c
+0x95b4298680f9418f7e32155ea7069ade25caf5f1
+0x07ae8551be970cb1cca11dd7a11f47ae82e70e67
+0x1b59718eafa2bffe5318e07c1c3cb2edde354f9c
+0x699EE12a1d97437A4A1E87C71e5d882b3881e2e3
+0xCad97616f91872C02BA3553dB315Db4015cBE850
+0x428ab2ba90eba0a4be7af34c9ac451ab061ac010
+0xbe75079fd259a82054caab2ce007cd0c20b177a8
+0x3d7dc36aa2b542ad239012730dfdb23f03d75be9
+0x394311A6Aaa0D8E3411D8b62DE4578D41322d1bD
+0xee51012a186832adc6473ab26b88f5624255a95c
+0x96ae533814f9a128333a2914a631b9ae690e2b0a
+0xe7488e7f5c60bfa81d38965c02b4cc5aa6249a11
+0xefF7337B37c8D217d01cb8223fe497ABD75190d5
+0x2f9d1d528b055e5fad132f65be128551f1c4a503
+0x18105A39dB36EB6f865704Be858bcC7954c66467
+0xeF1eC136931Ab5728B0783FD87D109c9D15D31F1
+0x27b86c00f28ca06dfdd0b84af577406f323a7935
+0x4e1bab12e5b9281dbe057f41b67e9a0f505fd37d
+0x1bfb84669be4018983969f5e369286054805bdd2
+0xe63bae1ab3eb28eac0cbb5b41f6a09f492654fef
+0xc7216a9097913f010be78b8d6ee6688b7c30cea4
+0xaa36fb925d80a4aca267bb1a9d3ef5c1af929cca
+0x07aE8551Be970cB1cCa11Dd7a11F47Ae82e70E67
+0xEeAF25aD4f51fE2f57Be2F206C9d8A568A618b99
+0x15652636f3898F550b257B89926d5566821c32E1
+0xd2068e04cf586f76eece7ba5beb779d7bb1474a1
+0xe0bac74ff58ca9d6c40e955e5e4b04129b795b7d
+0x41ee28EE05341E7fdDdc8d433BA66054Cd302cA1
+0xbe75079fd259a82054cAAB2CE007cd0c20b177a8
+0x9e2d2f9953cae6bb53b9805295d7cd6fb47d6ee4
+0x9a8f92a830a5cb89a3816e3d267cb7791c16b04d
+0xf136390d409619f18bb96645fb4a2897788c5fd9
+0xc0ffeebabe5d496b2dde509f9fa189c25cf29671
+0x9757cb8f382409828ffb1258cb1fe21a43d858ac
+0x1b59718eaFA2BFFE5318E07c1C3cB2edde354f9C
+0x89deedeb7b2859dd6ee337f9f692d33b472ce711
+0x95B4298680F9418F7e32155ea7069ADE25cAf5F1
+0x3d782c0c69101358a8267ba116c86726fdf35f91
+0xe59aaf21c4d9cf92d9ed4537f4404ba031f83b23
+0xc4655836221b1881fbe62908fdcb2cacad41e0c3
+0xd7d2807b0715aa1af8157574642f4f06c9badda2
+0x852f57dd17edbb0bedae8c55dd4b20feb3133089
+0xc31a49d1c4c652af57cefdef248f3c55b801c649
+0xfe263102682933297cb65dc813e5193249769251
+0xca73a9a0e16639aa21775de6c81dbe79e6cbc0a3
+0xee51012A186832adC6473aB26b88f5624255A95C
+0xd2068e04Cf586f76EEcE7BA5bEB779D7bB1474A1
+
+Table 8: All solver addresses identified in our analysis for
+fulfillments in Ethereum.
+
+16
+
+

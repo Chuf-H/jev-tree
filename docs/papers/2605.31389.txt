@@ -1,0 +1,985 @@
+Neuroforger: certified violation witnesses for
+smart contracts verification via LLMs
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+arXiv:2605.31389v1 [cs.PL] 29 May 2026
+
+University of Cagliari, Cagliari, Italy
+
+Abstract. Recent large language models (LLMs) incorporate reasoning capabilities that allow them to perform well in predicting whether a
+smart contract respects a certain property, suggesting a complementary
+approach to traditional formal-methods-based techniques for smart contract verification. However, the application of LLMs in such context has
+two major issues: 1) properties expressed in natural language are intrinsically ambiguous, and 2) answers returned by LLMs have no guarantee
+of correctness. In this paper, we address both issues simultaneously by:
+1) introducing a new formal specification language that extends Solidity
+with abstract types, and 2) designing a workflow that combines LLMs
+with type checking and concrete execution to generate and validate violation witnesses (i.e., counterexamples). The key idea is to represent a
+specification as a Solidity test with (existentially quantified) variables
+of abstract type; finding an instantiation of these variables to concrete
+values (of the correct type) concretizes the test into an executable counterexample (PoC) for the target property. We implemented our procedure
+in the tool Neuroforger, experimentally evaluating it on a smart-contract
+verification dataset drawn from literature, obtaining promising results
+that demonstrate its potential applicability in the wild.
+
+1
+
+Introduction
+
+Smart contracts are self-executing programs deployed on a blockchain that regulate asset transfer between users, forming decentralized financial ecosystems
+that currently manage assets worth hundreds of billions of dollars. Due to the
+immutability of the code after deployment, the absence of intermediaries, and
+the high value of assets managed, smart contracts are an attractive target for attackers. This is witnessed by a long history of attacks, estimated to have caused
+more than 6 billions of dollars of losses [17].
+Formal verification offers a principled approach to prevent attacks, allowing
+developers to assess whether their code respects suitable specifications before
+deployment. In practice, however, rigorous verification of smart contracts remains extremely challenging. Many violations arise from unforeseen interactions
+with other contracts, where attackers exploit subtle business logic errors that fall
+outside the scope of tools targeting predefined vulnerability patterns [37,17]. Furthermore, compared to other kinds of software, smart contracts introduce new
+
+2
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+attack vectors, e.g. those based on transaction ordering dependencies [20,6], exploits of the economic mechanisms [34,45], and quirks of the smart contracts language and execution environment [5]. State-of-the-art verification tools present
+several limitations, both in terms of expressivity (interesting strategic properties
+are not expressible) and in terms of soundness, as due to the complex semantics
+of programming languages used for smart contracts — most notably Solidity
+— tools often have to abstract from the actual semantics, leading to unsoundness. Furthermore, tools are rarely able to produce certificates that validate their
+answers, leaving the user with no choice but to trust their process.
+Recently, several works have explored how Large Language Models (LLMs)
+can assist program verification for tasks such as invariants generation [33,41,29,42],
+automatic code repair [40], and autoformalization of specifications [30,19]. Notably, in the context of smart contracts, it has been investigated whether LLMs
+can act as alternatives to classical formal verification techniques [12]. Empirical evidence suggests that modern reasoning-oriented LLMs are rather good at
+anticipating the validity of properties stated in natural language and at providing plausible explanations for their answers, without requiring a fixed or formal
+specification language. Nevertheless, this approach suffers from two fundamental and tightly coupled limitations: 1) the natural-language specifications fed as
+input to the LLMs are intrinsically ambiguous, and 2) there is no guarantee that
+the answers provided by the LLMs are correct.
+In this paper, we aim to tackle both issues. We will keep the focus on Solidity
+(the most used smart contract language), but the presented framework can easily
+be adapted to a variety of other languages. Our contribution is the following.
+First, we introduce GATE, a formal specification language based on an extension of Solidity augmented with abstract types (representing contracts, transactions, and variables). We then frame the verification problem as the problem
+of finding a concretization of a GATE-sentence (i.e., an assignment that maps all
+abstract entities to concrete ones), that makes all the assertions in the sentence –
+if any1 – evaluate to true. In other words, we see abstract entities as existentially
+quantified variables, and look at a satisfiability problem. If such an assignment
+exists, we say that the specification is violated; otherwise, that it is valid. In the
+following, we use the term specification as a synonym for GATE-sentence, and
+we call assignments counterexamples, or, following the terminology commonly
+used in cybersecurity, Proofs of Concept (PoCs).
+We define a procedure that takes as input a GATE specification, and returns either a certified counterexamples (which witnesses that the specification
+is violated with absolute certainty) or “true? ” (meaning that it was not able
+find a counterexample). This procedure leverages LLMs as the main reasoning
+engine responsible for the production of counterexamples. Exact methods are
+then used to either certify the LLM-produced counterexample, or to refute it.
+In the latter case, the LLM is then re-queried together with an explanation that
+motivates why the counterexample was not accepted. In this setting, the task of
+1
+
+By definition, a specification that contains no assertions is satisfied by all valid
+concretizations.
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+3
+
+the LLM only amounts to find a correct assignment, where here correct means
+two things: i) that the assignment is indeed a concretization (i.e., abstract entities are mapped to concrete terms of the corresponding type), and ii) that the
+assignment makes all the assertions in the sentence evaluate to true. The first
+condition can be checked via type checking, while the second condition can be
+checked through the concrete execution of the obtained PoC. If any of these conditions are not met, the LLM is instructed to refine the assignment produced,
+taking into account the reasons for the failure (as in a standard CEGIS loop2 ).
+We implemented our procedure in the prototype tool Neuroforger, which uses
+GPT-5 [32] to produce PoCs and the Forge [22] testing environment for concrete
+executions; in this preliminary version, the tool asks the user to manually validate
+the type checking.
+To the best of our knowledge, this is the first work in the field of smart
+contracts that studies how to leverage LLMs to construct certified counterexamples/PoCs.
+Contributions. We summarise our main contributions as follows:
+1. We propose a specification language for Solidity called GATE, defined by extending Solidity itself with abstract types that represent unknown contracts,
+transactions, and variables.
+2. We define the verification problem as the problem of finding an assignment
+of the abstract type variables to concrete values, such that all the assertions
+in the specification are satisfied.
+3. We propose a procedure that leverages LLMs to search for satisfying assignments, and combines type checking with concrete execution to certify the
+correctness of the assignments.
+4. We implement our procedure in the prototype Neuroforger and experimentally evaluate it on a dataset based on [12], showcasing the feasibility of the
+proposed approach.
+5. We make the tool and the dataset pubicly available on a github repository. [1]
+
+2
+
+Background and running example
+
+In this section we provide essential background on smart contracts in Solidity,
+on their formal verification, and on recent developments on integrating LLMs in
+the verification process.
+2.1
+
+Smart contracts and Solidity
+
+Abstractly, a blockchain can be seen as a state machine that creates crypto-assets
+and allows users to exchange them programmatically through smart contracts.
+2
+
+CEGIS stands for Counterexample-Guided Inductive Synthesis. Note that counterexample in this acronym has a different meaning than counterexample in the rest of
+the paper (which is used as a synonym for PoC).
+
+4
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+Listing 1.1. Solidity code for the Bank contract.
+contract Bank {
+mapping ( address user = > uint credit ) credits ; // records credits in ETH
+// receives ETH from users and increases their credits
+function deposit () public payable { // payable = > can receive ETH
+credits [ msg . sender ] += msg . value ;
+}
+// sends ETH to users and decreases their credits
+function withdraw ( uint amount ) public {
+// reverts transaction if amount exceeds the sender ’ s credits
+require (0 < amount && amount <= credits [ msg . sender ]) ;
+credits [ msg . sender ] -= amount ;
+// invokes the receive function of msg . sender & transfers amount ETH
+( bool success ,) = msg . sender . call { value : amount }("") ;
+// reverts transaction if the previous call does not succeed
+require ( success ) ;
+}
+}
+
+The state of this machine records which assets are owned by which accounts,
+and each transaction advances the system to a new state by transferring assets between accounts or, in some cases, creating new assets or new smart contracts. Solidity is the main programming language for smart contracts, and it is
+supported by leading blockchain platforms such as Ethereum, BNB Chain and
+Avalance [7]. In these blockchains, transactions are issued by users who control
+externally owned accounts (EOAs). A transaction may either directly transfer
+the native currency (e.g., ETH on Ethereum) to another EOAs, or invoke a
+function of a smart contract, possibly transferring currency along with the call.
+Contract functions are written in a procedural style, with a few domain-specific
+constructs such as the transfer of currency, mechanisms to revert transactions
+upon given conditions, and controls over computational resources through the
+gas mechanism [2]. Similarly to object-oriented languages, each deployed contract instance has its own persistent storage, which contains the state variables
+and data structures defining the contract state. In addition to this storage, every
+contract account also has an associated balance of the native currency, which is
+maintained by the blockchain execution environment and automatically updated
+whenever transfers to or from the contract occur.
+We illustrate Solidity through a simple Bank contract in Listing 1.1. The
+contract stores in a key-value map the credits associated to each bank’s client.
+When an account (identified by msg.sender) invokes the function deposit, the
+effect is twofold: (i) transfer an amount of currency (identified by msg.value)
+from the sender’s balance to the contract’s; (ii) record the sender’s additional
+credit in the map. The withdraw function first decreases the number of credits
+and then transfers the amount of currency from the contract to the user.
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+2.2
+
+5
+
+Formal verification of Solidity contracts
+
+Bugs in smart contract code are particularly critical compared to those in traditional software. Once deployed, a smart contract’s code is immutable, meaning
+that programming errors cannot be patched or fixed retroactively. Moreover,
+the permissionless nature of public blockchains allows any user to interact with
+deployed contracts, often without explicit authorization. As a consequence, vulnerabilities can be directly exploited by adversaries to steal, lock, or otherwise
+tamper with the digital assets managed by the contract.
+Recent empirical studies show that logical errors in smart contract code account for the vast majority of losses caused by real-world attacks [17]. Such errors
+are inherently difficult to detect automatically, as existing vulnerability detection
+tools focus on specific classes of bugs (e.g., reentrancy or arithmetic overflows)
+rather than on arbitrary deviations from intended contract functionality. As a
+consequence, formal verification has emerged as a central and long-standing goal
+in the smart contract security auditing industry, offering the promise of reasoning
+about contract correctness at the level of intended semantics.
+This growing interest is reflected in the emergence of several formal verification tools for Solidity proposed in recent years, some of which have achieved
+industrial adoption. SolCMC [3] and the Certora Prover [27] are two prominent
+examples in this space, each offering a distinct specification language, relying on
+different verification techniques, and providing different outputs to the users.
+SolCMC [3], which is integrated into the Solidity compiler, allows users to
+express properties as assertions embedded in Solidity code. These assertions are
+interpreted as state invariants that must hold in all reachable contract states.
+SolCMC translates the instrumented contract into a set of logical constraints,
+which are then discharged by an SMT/CHC solver (Z3 [31] or Eldarica [26]).
+The Certora Prover [27,13], unlike SolCMC, decouples the specification of the
+properties from the contract code, providing a domain-specific language (CVL)
+for specs. A CVL spec defines constraints on the execution of a contract, and
+assertions that must be true in all states satisfying the given constraints. Certora
+compiles the Solidity contract and the CVL spec into a logical formula, and relies
+on SMT solvers to determine if the spec is satisfied in all contract states.
+Both tools address the state explosion problem by approximating the Solidity
+semantics. Such approximations, however, may introduce false negatives (i.e., a
+property holds but the tool classifies it as violated), and — more critically —
+false positives (the property is violated, but the tool reports it as valid). Both
+kinds of erroneous classifications occur in practice and have been observed even
+for relatively simple smart contracts [11].
+A crucial problem is that assessing the reliability of a classification provided
+by these tools is quite challenging. In particular, when these tools claim that a
+property is satisfied, they do not provide any certification: confidence in the result
+rests solely on their presumed correct implementation and sound approximation
+of the Solidity semantics (but, as observed before, such approximations are not
+always sound, limiting the trustworthiness of such positive results).
+
+6
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+When claiming that a property is violated, the two tools follow different
+approaches. SolCMC attempts to construct a counterexample, in the form of
+a sequence of transactions leading the contract to a state where an asserted
+invariant is violated. However, in our hands-on experiments with SolCMC on
+a large dataset of verification tasks, we observed that such counterexamples
+are produced only in a small fraction of the cases in which SolCMC reports a
+violation. [12] Even when counterexamples are outputted, they often lack the
+level of detail required to independently validate them through concrete PoCs.
+The Certora Prover provides counterexamples in the form of contract states
+that are claimed to violate the specified property. Unlike SolCMC, it does not
+attempt to ensure that such states are reachable: rather, it is responsibility of the
+property designer to require in the spec suitable invariants on the contract state
+so to rule away violations happening in unreachable states. As a consequence,
+determining whether a produced counterexample is spurious (false negative) or
+not often requires a time-consuming manual analysis [15].
+2.3
+
+Running example
+
+To illustrate our approach, we will use as a running example the Bank contract
+in Listing 1.1, on which we want to verify the following simple property:
+withdraw-assets-credit-others: “after any non-reverting call to function
+withdraw(), the balances of any user but the sender are preserved ”
+
+Although this property may seem trivially valid, given that the withdraw
+function only updates the credits of msg.sender, this reasoning overlooks a subtle
+aspect of Solidity’s execution model: the semantics of the call statement. Besides
+transferring an amount of currency from the caller to msg.sender, this statement
+also triggers the invocation to a function of the callee (i.e., receive, or fallback if
+the former is not present [39]). For EOAs and for contract accounts where these
+functions are empty, this call has no effect other than accepting the incoming currency. If this were always the case, the property withdraw-assets-credit-others
+would hold. However, the sender may itself be a contract A whose receive or
+fallback calls another contract B, which in turn calls the deposit function of the
+Bank contract. In this scenario, the property withdraw-assets-credit-others is
+violated, since the call to withdraw indirectly affects the balance of an account
+different from the original sender A (namely, contract B).
+The symbolic verification tools considered above give divergent results on this
+verification task: SolCMC returns “unknown” when used with Z3 and “False”
+with Eldarica (without a counterexample), while the Certora Prover incorrectly
+reports the property as “True” [12].
+2.4
+
+LLMs as verification oracles for Solidity
+
+In recent work [12] we investigated the effectiveness of LLMs as predictors of the
+truth of properties of Solidity contracts, using a large dataset of verification tasks
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+7
+
+Fig. 1. GPT-5 output of [12] for the query withdraw-assets-credit-others.
+Answer :
+FALSE
+Explanation :
+withdraw decreases only credits [ msg . sender ] and then performs an external
+call to msg . sender .
+During that external call , arbitrary reentrant code can execute and invoke
+deposit from a different address , changing another user ’ s credit .
+Thus , other users ’ credits are not necessarily preserved .
+See withdraw : it updates credits [ msg . sender ] then calls msg . sender . call (...)
+enabling reentrancy , and deposit writes to credits [ msg . sender ]
+for the reentrant caller .
+Coun terexamp le :
+- Setup : Let attacker contract A and helper contract B exist .
+credits [ A ] = 10 ( A previously called deposit with 10 ETH ) .
+credits [ B ] = 0.
+- Transaction : A calls withdraw (10) .
+Bank subtracts 10 from credits [ A ] and sends 10 ETH to A .
+- Reentrancy : In A ’ s fallback , A calls B . depositToBank { value : 1 ether }() ,
+and B calls bank . deposit { value : 1 ether }() .
+This sets credits [ B ] = 1.
+- Outcome : withdraw returns successfully ( non - reverting ) .
+Now credits [ B ] changed even though B =/= A , violating the property .
+
+as a basis for a systematic empirical evaluation. While GPT-4’s performance
+was in line with expectations and relatively modest (overall accuracy ∼70%),
+GPT-5 achieved substantially higher performance metrics (accuracy ∼92%) and
+consistently provided high-quality explanations, both in terms of correctness,
+completeness and coherence with the required task.
+In the prompt used for our experiments in [12], we provided as input to the
+LLM the verification task (Solidity contract and property in natural language),
+and asked the LLM to provide a verification report including the outcome (True,
+False, or Unknown), an explanation of the reasoning used to reach that outcome,
+and — for the tasks with a False outcome — a counterexample showing a state
+and/or a sequence of transactions that violate the property.
+When applied to our running example in Section 2.3, GPT-5 provided the
+verification report in Figure 1.
+Although the counterexample produced by GPT-5 is intuitively correct and
+coherent with our informal explanation in Section 2.3, it cannot be regarded
+as an actual certificate of property violation. In particular: (i) the contracts to
+be deployed by the attacker and the transactions leading to violation are only
+partially specified; (ii) there is no guarantee that the suggested transactions
+produce the predicted outcomes.
+At this point, considerable human effort is still needed to refine the sketched
+counterexample produced by GPT-5 into a concrete PoC witnessing the property
+violation. In the remainder of the paper we propose a different approach that
+still leverages LLMs but allows for fully automatically generated certified PoCs.
+
+8
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+Listing 1.2. Example of valid specification in GATE.
+import " forge - std / Test . sol "; // import testing features
+a b s t r a c t contract c ; // to be concretized
+contract Foo { // the contract under verification
+function sendEther ( address to , uint256 amount ) {
+address ( to ) . call { value : amount }("") ; // sends ‘ amount ‘ of wei to ‘to ‘
+}
+}
+contract Test_Foo is Test {
+function t es t _s en d_ e th er () { // abstract PoC
+Foo foo = new Foo () ; // creates a new contract instance foo of type Foo
+vm . deal ( address ( foo ) , 10) ; // gives 10 wei to contract foo
+uint256 bal_before = address ( foo ) . balance ;
+a b s t r a c t transaction [] txs ; // here I can craft some transactions
+uint256 bal_after = address ( foo ) . balance ;
+a b s t r a c t uint256 diff ; // here I can instantiate some integer
+assert ( bal_after - bal_before == diff ) ;
+}
+}
+
+3
+
+The GATE specification language
+
+We define the GATE (Generative Abstract Types Expressions) specification
+language as an extension of Solidity with abstract types. The abstract types of
+our interest can be split into three classes:
+– base types (e.g.uint256, bool, etc.);
+– the type contract (contracts in Solidity include state variables and functions,
+similarly to classes in object-oriented languages [38]);
+– the type transaction, which represents the invocation of a contract function
+from a user.
+Among these, only transaction is not a native type in Solidity. Rather, it
+can be seen a tuple of base types: two addresses ‘from’ (the caller) and ‘to’ (the
+callee), one uint256 ‘value’ (the amount of ETH sent along with the transaction),
+one byte4 ‘selector’ (the function being called), and one bytes memory ‘params’
+(a dynamically-sized byte array representing function parameters).
+In practice, for calls performed within a contract (e.g., the call in Listing 1.1),
+the address from will always be equal to the address of the contract itself. When
+crafting counterexamples, however, we want more flexibility, e.g. we want to
+consider calls between arbitrary accounts (e.g., in our running example, a call
+from a user to Bank, and a call from the attacker contract to Bank).
+To achieve this flexibility, we leverage the Forge environment (the testing
+module of the Foundry toolkit [21]), which provides powerful testing features.
+Among them, we rely in particular on the following:
+– vm.prank(address), which causes the next contract call to be executed as it
+were sent from the given address;
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+9
+
+Listing 1.3. An executable concretization of the abstract PoC in Listing 1.2.
+contract C1 { receive () e x t e r n a l payable { } } // can just receive wei
+contract Foo {
+function sendEther ( address to , uint256 amount ) {
+address ( to ) . call { value : amount }("") ; // sends ‘ amount ‘ of wei to ‘to ‘
+}
+}
+contract Test_Foo {
+function t es t _s en d_ e th er () { // concrete PoC
+Foo foo = new Foo () ;
+vm . deal ( address ( foo ) , 10) ; // sets balance of ‘ foo ‘ to 10
+uint256 bal_before = address ( foo ) . balance ;
+C1 c = new C1 () ; // creates a new contract ‘c ‘ of type ‘C1 ‘
+foo . sendEther ( address ( c ) , 1) ;
+uint256 bal_after = address ( foo ) . balance ;
+uint256 diff = 1; // instantiate diff to 1
+assert ( bal_after - bal_before == diff ) ;
+}
+}
+
+– vm.deal(address, uint256), which sets the balance of the given address to
+an arbitrary non-negative integer value.
+The concretization of an abstract transaction will be either: (i) a vm.deal, representing an external transfer of currency to an account; (ii) a vm.prank coupled
+with a call, representing the invocation of a contract function from a given
+address; (iii) the deployment of a contract (via the keyword new).
+Listing 1.2 shows a toy example of a GATE specification. First, we declare an
+abstract contract c and define a concrete contract Foo, with only one function
+sendEther that transfers some amount of ETH to an address to. Then, we define a
+concrete contract Test_Foo (inheriting the type Test from the Forge library). In
+this contract, we create a new instance foo, which we provide with 10 currency
+units through vm.deal. Then, we declare an abstract array of transactions txs
+and use two variables bal before and bal after to record the balance of foo
+before and after performing txs. Finally, we declare an abstract uint256 diff
+and assert it to be equal to the difference between bal before and bal after.
+A concretization of a GATE specification is a compilable Solidity contract
+where the abstract variables have been replaced by values of the corresponding
+types. Listing 1.3 shows a concretization of the spec in Listing 1.2. Note that:
+– c is concretized into a contract C1 with a receive function that just accepts
+incoming funds [39];
+– diff is concretized into the integer 1;
+– txs is concretized into a sequence of two calls: 1) the deployment of a new
+instance c of a contract of type C1, 2) a call to the function sendEther that
+transfers 1 wei from Test_foo (referred to be this) to c.
+
+10
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+Listing 1.4. Specification of withdraw-assets-credit-others in GATE.
+import " forge - std / Test . sol ";
+import "../ Bank . sol ";
+a b s t r a c t contracts [] cs ;
+contract BankTest is Test {
+Bank immutable bank ;
+constructor () {
+a b s t r a c t address bank_deployer ;
+vm . prank ( bank_deployer ) ;
+bank = new Bank () ;
+}
+function t e s t _ w i t h d r a w _ a s s e t s _ c r e d i t _ o t h e r s _ v i o l a t i o n () public {
+a b s t r a c t transaction [] txs ;
+a b s t r a c t address user ;
+uint256 u s e r _ c r e d i t s B e f o r e = bank . credits ( user ) ;
+a b s t r a c t uint256 amount ;
+a b s t r a c t address sender ;
+vm . prank ( sender ) ;
+bank . withdraw ( amount ) ; // should not revert
+uint256 u s e r _ c r e d i t s A f t e r = bank . credits ( user ) ;
+assertNotEq ( sender , user , " user equal to sender ") ;
+assertNotEq ( user_creditsBefore , user_creditsAfter , " cred . not changed ") ;
+}
+}
+
+We define the verification problem for a GATE spec as the problem of finding
+a concretization such that, when executed, all the assertions evaluate to true.
+If such concretization exists, we say that the spec is violated, otherwise that
+it is valid. For example, the spec in Listing 1.2 is violated, since executing its
+concretization in Listing 1.3 passes the final assertion.
+Listing 1.4 displays the GATE spec of the property considered for our running example in Section 2.3. The spec features a variable cs of type abstract
+contracts[] outside of the test contract body, which represents an arbitrary array of contract definitions. In the test contract, we crucially have an abstract
+variable of type transaction[], which characterizes the set of reachable states
+after the deployment of the Bank contract. Then, an address sender calls the
+withdraw function, sending amount of wei (note that, if the call reverts, then the
+test fails, i.e. this is equivalente to asserting that the call does not revert). Finally, we assert that an address user is different from sender, and that its credit
+have changed. If there is an assignment of the abstract type variables to concrete
+values so that all the asserts pass, this demonstrates a violation of the property.
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+11
+
+Fig. 2. Workflow of the procedure.
+FAIL
+Contract(s)
+
+⟨CEX ⟩?
+
+type check
+& forge test
+
+PASS
+
+(False, ⟨CEX ⟩)
+
+LLM
+Spec
+
+True?
+
+true?
+
+4
+
+Producing certified counterexamples
+
+We present in this section our method to produce certified counterexamples. The
+high-level workflow of our procedure is displayed in Figure 2.
+The procedure takes as input a set of contracts and a GATE spec. Then,
+it invokes an LLM, prompting it to produce a concretization of the spec, or —
+if it believes no concretization exists — to output “true? ” (the question mark
+signals that there is no guarantee that the answer is correct). When the LLM
+produces a tentative concretization, we: (i) check whether it is really so (i.e., if
+its concrete types match the abstract ones); (ii) execute the concretization: if it
+passes all the assertions, then it is an actual counterexample to the property,
+and we return it, together with “False”. If any of the two checks fail, the LLM
+is re-prompted, receiving as input the original problem, its previous answer, and
+the reason why the answer was rejected.
+The type checking of the concretization is used to prevent the LLM from
+cheating, i.e. not respecting the abstraction restrictions. For example, if the
+prompt fed to the LLM is not sufficiently precise, the LLM could e.g. concretize
+an abstract integer variable to a concrete integer variable followed by a contract
+call, thus violating types.
+The procedure can be parameterised by Niter > 0, which defines the maximum number of iterations between the LLM and the checks: if such limit is
+surpassed, the procedure returns “true? ”, where the question mark is to remind
+that this prediction is not certified (unlike for the “False” case, where the answer
+is certified to be correct).
+To exemplify of our procedure, in Listing 1.5 we show a certified counterexample to the specification in Listing 1.4 generated by GPT-5. Note that LLM’s
+answers are not deterministic, hence running again the procedure (even using
+the same LLM) may produce different outputs.
+
+5
+
+Experiments
+
+Dataset. We base our experiments on the dataset in [12], focussing on the Bank
+use case described in Section 2.3. The dataset contains 17 versions of the Bank
+contract and 27 properties, which are common to all the versions. Besides the
+
+12
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+Listing 1.5. A certified counterexample for the spec in Listing 1.4, generated by GPT5.
+[...] // imports
+contract User {
+function doDeposit ( Bank bank ) e x t e r n a l payable {
+bank . deposit { value : msg . value }() ;
+}
+receive () e x t e r n a l payable {}
+}
+contract Attacker {
+Bank public bank ;
+User public user ;
+constructor ( Bank _bank ) {
+bank = _bank ;
+}
+function setUser ( User _user ) e x t e r n a l {
+user = _user ;
+}
+// When receiving ETH from Bank . withdraw , forward it to User ,
+// which deposits into Bank , crediting the User .
+receive () e x t e r n a l payable {
+user . doDeposit { value : msg . value }( bank ) ;
+}
+}
+contract BankTest is Test {
+constructor () {
+address bank_deployer = address (0 xBEEF ) ;
+[...] // deployment of bank
+}
+function t e s t _ w i t h d r a w _ a s s e t s _ c r e d i t _ o t h e r s _ v i o l a t i o n () public {
+User u = new User () ;
+Attacker a = new Attacker ( bank ) ;
+a . setUser ( u ) ;
+vm . deal ( address ( a ) , 1 ether ) ;
+vm . prank ( address ( a ) ) ;
+bank . deposit { value : 1 ether }() ;
+address user = address ( u ) ;
+[...] // def . of u s e r _ c r e d i t s B e f o r e
+uint256 amount = 1 ether ;
+address sender = address ( a ) ;
+[...] // call to bank . withdraw and asserts
+}
+}
+
+original contract in Listing 1.1, the other 16 versions are manually constructed
+by mutating the original code so to introduce logic errors or divergent behaviours
+that may affect the validity of some of the properties.
+The properties included in the dataset are of different kinds [8]:
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+13
+
+– function specs (e.g., a non-reverting call to a certain function produces a
+certain effect on the state of the caller and the callee),
+– state invariants (e.g., the sum of all users’ credits does not exceed the contract balance),
+– metamorphic properties (e.g., two different sequences of transactions produce
+the same effect on the contract state),
+– strategic properties (e.g., there exists a sequence of transactions that produces some desired effect on the contract state — such as no ETH balance
+remains frozen in the contract).
+For each verification task — i.e., pair (property, version) — the dataset includes a ground truth, i.e. a boolean telling whether the property holds or not
+for that version. In order to feature a ∼ 1:1 ratio between positive and negative
+tasks, a sub-dataset of 121 verification tasks is sampled.
+Experimental setup. We implement the tool Neuroforger, following the workflow
+depicted in Figure 2. We used GPT-5 as LLM model (although, in principle, the
+tool is modular w.r.t. the model). The LLM prompt (which we do not include
+here for space constraints, but whose content is available on the public repository) adopts a zero-shot chain-of-thoughts approach. We use the OpenAI API’s
+default parameters at the time of the experiments: the sampling temperature
+is set to 1.0, nucleus sampling was disabled (top-p = 1.0), and no frequency or
+presence penalties were applied. The maximum number of generated tokens is
+30,000, with generation terminating either upon reaching this limit or according to the model’s internal end-of-sequence criteria. We set Niter = 3 as the
+maximum number of iterations between the LLM and the checks. For the type
+checking, we rely on manual validation, interactively asking the user to confirm
+whether the check passed or to provide an explanation for why it failed. The
+total cost of the experiments was below €10.
+Expressibility. We encode in GATE 22 of the 27 properties for the Bank use case
+featured in the dataset. In particular, we observe that state invariants, singletransition invariants, and multiple-transition invariants are, in general, naturally
+expressible in GATE. Also the metamorphic properties present in the dataset
+(i.e., properties that predicate over different paths, in the sense of temporal
+logic [18]) are expressible in GATE, using the Forge feature of “snapshots” [23].
+Of the 22 encoded properties, 2 required more advanced specifications using
+“diff recording” [24], a feature of Forge that allows the inspection of the content
+of transactions. Indeed, in order to specify in GATE, e.g., that “the balance of
+the contract is greater than or equal to the sum of all users’ credits”, one needs
+to track the sum at run-time. This is only possible by writing a function that,
+given a sequence of transactions, checks whether the users credits have been
+changed, and, if so, keeps track of the changed values (this is analogous to hooks
+in CVL [16]). A similar trick is needed to predicate over internal function calls
+(i.e. calls triggered by other calls, rather than fired by an EOA). In this case, the
+specification must inspect the content of a transaction at the low-level to assess
+
+14
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+whether the given function has been called internally or not. This can also be
+achieved in GATE through diff recording.
+As a side note, it would have been possible to express in GATE properties
+about call interleavings (e.g., “if f1 is called after f2, no matter how many other
+calls have been made in between, then P holds”). However, no property of this
+kind is included in the dataset [12] for the Bank use case. We note that this kind
+of properties is usually out of the scope of formal verification tools, as it requires
+to predicate over arbitrarily long sequences of transactions, whereas standard
+specification languages are usually limited to a fixed number of transactions.
+In principle, it might still be possible to prove some of these properties, by
+writing (and proving) inductive invariants that constraint the changes that the
+blockchain state can incur after a transaction (hence generalizing to changes after
+an arbitrarily long sequence of transactions). In practice, however, discovering
+such invariants can be extremely challenging and it can require lots of manual
+work.
+Of the 5 properties for which we do not provide GATE specifications, 3 seem
+expressible in GATE, but only at the cost of writing very complex specifications. These properties have the form “there exists a unique address such that P
+holds”, for different predicates P . Writing a counterexample to such properties
+would either require to show two distinct addresses such that P holds (which is
+easy to express in GATE), or show that there is no address such that P (i.e., for
+all addresses ¬P ). The latter would be essentially inexpressible, given that the
+number of possible addresses is 2256 , which makes it unfeasible to loop over all addresses. For certain properties, including those in our dataset (where, e.g., P has
+the form “the address balance has changed ”), one could restrict to the addresses
+that occur in a sequence of transactions, relying on the fact that P trivially holds
+for all the other addresses. Therefore, a GATE specification could be written by
+looping over these addresses. This approach, however, would require the user to
+ensure that all the relevant addresses have been properly tracked; a subtle flaw
+may cause the specification to diverge from the property intended meaning. For
+this reason, we opted for not including such specifications in our experiments.
+The remaining 2 properties for which we do not provide a GATE specification
+represent so-called liquidity/enabledness [9,35], having the form “in every state,
+it is always possible to perform some actions to reach a state in which P holds”.
+Properties of this kind are not expressible in GATE, in general. Indeed, here
+the issue is that, in order to show a violation, one needs to prove that, for all
+possible actions, it is not possible to reach a state in which P holds. This negative
+answer is more similar to a proof, rather than to a counterexample/PoC. We
+note that, apart from academic tools that only work on a restricted fragment of
+Solidity [9,10], liquidity is out of the scope of all other provers.
+Results. Our experiments encompass 110 verification tasks, of which 57 with
+positive ground truth and 53 with negative ground truth. Results are displayed
+in Table 1. Crucially, we see that the tool never returned False for verification
+tasks that have a positive ground truth. Among the verification tasks with negative ground truth, the tool returned a counterexample for 48 instances, while for
+
+Certified violation witnesses for smart contracts verification via LLMs
+Ground truth
+Output
+true?
+False
+
+TRUE
+
+FALSE
+
+57
+0
+
+4
+48
+
+15
+
+Table 1. Experimental results.
+
+the remaining 5 instances it did not. For 4 of these 5 instances, we validated the
+ground truth by manually constructing a valid concretization of the GATE specification. The remaining instance is quite interesting: a “valid” counterexample
+exists, in theory, but it requires 2256 − 1 function calls, making it unfeasible in
+practice. Given the ambiguity on the ground truth for this verification task, we
+believe that the output of the tool should not be considered incorrect in this
+case, hence we discard this verification task when computing metrics.
+We furthermore report in Table 2 the data on the number of iterations performed by the tool before returning an answer. All iterations are due to failures
+during concrete test executions; no types violations occurred in our experiments.
+As we can observe, the tool never used all the 3 iterations allowed by the iteration limit, and it rarely used 2 iterations (3% of the verification tasks). For 14%
+of the verification tasks, it performed 1 iteration, while for the remaining 85%
+no iteration was performed. Iterations distribute almost proportionally between
+verification tasks with true and false ground truth. This shows that the feedback
+returned by Forge can help the LLM both at understanding that a tentative violation cannot actually occur, and at refining a violation that is indeed possible
+although not yet precise.
+Discussion. Overall, our technique shows very good performance metrics: an
+accuracy of 96%, a precision of 100% (note that this is ensured by type checking
+and concrete execution), a recall of 93%, and an F1 score of 96%. These metrics
+are in line with those obtained in [12] on the same dataset by querying GPT-5
+with a natural language property, and asking it to return True/False, together
+with a natural language explanation (see Section 2.4). A closer quantitative comresults
+# iter.
+Total
+0
+1
+2
+3
+
+Total
+
+(TRUE, true? )
+
+(FALSE, true? )
+
+(FALSE,False)
+
+109
+
+57
+
+4
+
+48
+
+90
+15
+4
+0
+
+46
+10
+1
+0
+
+4
+0
+0
+0
+
+40
+5
+3
+0
+
+Table 2. Experimental results, where each prediction is associated to the number of
+iteration where it is obtained. The rows represents the three possible results based on
+the pairs (ground truth, output).
+
+16
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+parison with [12] reveals that our technique achieves higher precision and lower
+specificity. This is easily explained by the fact that our procedure is guaranteed
+to return False only when the counterexample is certified, hence false negatives
+do not exist by construction. Indeed, a key qualitative difference, is that, thanks
+to the fact that the properties that we pass in input are unambiguous (being
+written in a well-defined specification language), the counterexample returned
+by our procedure are guaranteed to actually violate the property. Hence not
+only false negatives are avoided, but also true negatives are guaranteed to be as
+such. While this might not seem too important when working in a controlled
+environment where the ground truth is known, it is of fundamental relevance in
+the wild, where an incomplete or inconsistent answer could be of little value.
+
+6
+
+Related work
+
+In the field of smart contracts, some works [25,43,4] have experimented with
+LLMs to generate PoC of exploits. Compared to our work, [25,43] only take in
+consideration a single fixed property, i.e. the ability for an attacker to extract
+crypto-currency from a contract, and only with respect to snapshots of on-chain
+data. On the contrary, we consider arbitrary properties expressible in a rich
+formal specification language, and arbitrary reachable blockchain states. While
+[25,43] show how attackers can leverage LLMs to exploit on-chain contracts,
+we envision our approach as a defense technique, providing an analysis that
+can be performed before deployment to assess whether desirable properties can
+be violated. Similarly to our, PoCo [4] takes the side of the defender, but it
+requires an auditor to manually write natural-language vulnerability descriptions
+that are then converted to executable PoCs by an LLM. Our approach, on the
+contrary, only asks the user to write the specification, and then relies on the
+LLM to discover the vulnerability. Moreover, the PoCs produced by PoCo are
+not guaranteed to actually reflect the vulnerability descriptions passed as input,
+whereas, in our case, using a formal specification language prevents this from
+happening.
+Other general-purpose approaches leverage machine learning techniques to
+boost formal verification (e.g., by hinting invariants [33,41,29,42], selecting tactics [36,44], or instantiating quantifiers [14,28]). Other lines of research are concerned with the verification of LLM-generated code (e.g. [19]), and with pairing
+LLMs with formal methods for automatic code repair [40].
+We are not aware of approaches that specifically aim at using LLMs in program verification to produce counterexamples. We conjecture this might be due
+to the fact that, in the smart contract domain, finding a counterexample usually
+requires to also generate code (of the attacker’s contracts). This might be a peculiarity of the field, in which, in order to successfully use LLMs for verification,
+they are required to, at the same time, generate code and try to determine the
+validity of a property.
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+7
+
+17
+
+Conclusions
+
+We proposed a technique that leverages LLMs to generate counterexamples for
+verification tasks on Solidity smart contracts. The key feature of our technique
+is that it guarantees that, whenever a counterexample is produced, it certificates
+the violation of the property. To this purpose, we introduced a specification
+language based on an extended version of Solidity with abstract types (representing, e.g., contracts and transactions), and framed the verification problem as
+the problem of finding a valid concretization that makes the assertions contained
+in the specification evaluate to true. The task of the LLM consists then in producing such a concretization, whereas its validity is certified via type checking,
+and the satisfaction of the assertions via concrete execution. To help the LLM
+find a correct concretization, when one of the checks fails, we recur to a CEGIS
+loop that provides the LLM with a useful feedback. We implemented the proposed workflow in the prototype tool Neuroforger, showcasing its effectiveness
+on a simple yet paradigmatic use case.
+Our neuro-symbolic approach can be seen as a complement to traditional formal verification techniques, which usually struggle to produce counterexamples
+(sometimes leading to unsound results).
+Future works. There are several directions in which this work can be extended,
+such as: systematically evaluate Neuroforger over the full benchmark in [12],
+implement a type checker to automatically certify the correctness of the concretization, and investigate alternative prompting techniques (e.g., feeding to
+the LLM also a description of the property in natural language).
+Moreover, while the current paper only tackles the problem of producing
+certified negative answers (i.e. counterexamples), we believe that similar neurosymbolic techniques can also be designed to tackle the dual problem of producing
+certified positive answers (i.e. proofs). A more long-term research goal is to understand what kind of workflow would be necessary in order to achieve automatic
+proof generation.
+Acknowledgments Work partially supported by project SERICS (PE00000014)
+under the MUR National Recovery and Resilience Plan funded by the European Union – NextGenerationEU, and by PRIN 2022 PNRR project DeLiCE
+(F53D23009130001).
+
+References
+1. Public data for “Neuroforger: certified violation witnesses for smart contracts verification via LLMs”. https://github.com/elipparini/Neuroforger (2026)
+2. Albert, E., Correas, J., Gordillo, P., Román-Dı́ez, G., Rubio, A.: GASOL: Gas
+analysis and optimization for Ethereum smart contracts. In: TACAS (2020).
+https://doi.org/10.1007/978-3-030-45237-7_7
+3. Alt, L., Blicha, M., Hyvärinen, A.E.J., Sharygina, N.: SolCMC: Solidity compiler’s
+model checker. In: CAV (2022). https://doi.org/10.1007/978-3-031-13185-1_
+16
+
+18
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+4. Andersson, V., Bobadilla, S., Hobbelhagen, H., Monperrus, M.: Poco: Agentic
+proof-of-concept exploit generation for smart contracts. CoRR (2026). https:
+//doi.org/10.48550/ARXIV.2511.02780, https://arxiv.org/abs/2511.02780
+5. Atzei, N., Bartoletti, M., Cimoli, T.: A survey of attacks on Ethereum smart contracts (sok). In: POST (2017). https://doi.org/10.1007/978-3-662-54455-6_8
+6. Babel, K., Daian, P., Kelkar, M., Juels, A.: Clockwork finance: Automated analysis
+of economic security in smart contracts. In: IEEE S&P (2023). https://doi.org/
+10.1109/SP46215.2023.10179346
+7. Bartoletti, M., Benetollo, L., Bugliesi, M., Crafa, S., Sasso, G.D., Pettinau, R.,
+Pinna, A., Piras, M., Rossi, S., Salis, S., Spanò, A., Tkachenko, V., Tonelli, R.,
+Zunino, R.: Smart contract languages: A comparative analysis. Future Gener. Comput. Syst. 164 (2025). https://doi.org/10.1016/J.FUTURE.2024.107563
+8. Bartoletti, M., Crafa, S., Lipparini, E.: Formal Verification in Solidity and Move:
+Insights from a Comparative Analysis. In: FMBC (2025). https://doi.org/10.
+4230/OASIcs.FMBC.2025.3
+9. Bartoletti, M., Ferrando, A., Lipparini, E., Malvone, V.: Solvent: Liquidity verification of smart contracts. In: Integrated Formal Methods (2024). https://doi.
+org/10.1007/978-3-031-76554-4_14
+10. Bartoletti, M., Ferrando, A., Lipparini, E., Malvone, V.: KindHML: formal verification of smart contracts based on Hennessy-Milner logic. CoRR (2026). https:
+//doi.org/10.48550/ARXIV.2604.14038, https://arxiv.org/abs/2604.14038
+11. Bartoletti, M., Fioravanti, F., Matricardi, G., Pettinau, R., Sainas, F.: Towards
+benchmarking of Solidity verification tools. In: FMBC (2024). https://doi.org/
+10.4230/OASICS.FMBC.2024.6
+12. Bartoletti, M., Lipparini, E., Pompianu, L.: LLMs as verification oracles for Solidity. In: Financial Cryptography (2026)
+13. Bernardi, T., Dor, N., Fedotov, A., Grossman, S., Immerman, N., Jackson, D.,
+Nutz, A., Oppenheim, L., Pistiner, O., Rinetzky, N., Sagiv, M., Taube, M.,
+Toman, J.A., Wilcox, J.R.: WIP: Finding bugs automatically in smart contracts
+with parameterized invariants. https://groups.csail.mit.edu/sdg/pubs/2020/
+sbc2020.pdf (2020)
+14. Blanchette, J.C., Ouraoui, D.E., Fontaine, P., Kaliszyk, C.: Machine Learning for
+Instance Selection in SMT Solving. In: Conference on Artificial Intelligence and
+Theorem Proving (2019)
+15. Certora verification reports. https://docs.certora.com/en/latest/docs/
+prover/dashboard/report.html (2025)
+16. Certora: Hooks. https://docs.certora.com/en/latest/docs/cvl/hooks.html
+(2025)
+17. Chaliasos, S., Charalambous, M.A., Zhou, L., Galanopoulou, R., Gervais, A.,
+Mitropoulos, D., Livshits, B.: Smart contract and DeFi security: Insights from
+tool evaluations and practitioner surveys. In: ICSE (2024). https://doi.org/10.
+1145/3597503.3623302
+18. Chen, T.Y., Kuo, F., Liu, H., Poon, P., Towey, D., Tse, T.H., Zhou, Z.Q.: Metamorphic testing: A review of challenges and opportunities. ACM Comput. Surv.
+51(1) (2018). https://doi.org/10.1145/3143561
+19. Cramer, M., McIntyre, L.: Verifying LLM-generated code in the context of software
+verification with Ada/SPARK (2025), https://arxiv.org/abs/2502.07728
+20. Eskandari, S., Moosavi, S., Clark, J.: SoK: Transparent Dishonesty: Front-Running
+Attacks on Blockchain. In: Financial Cryptography (2020). https://doi.org/10.
+1007/978-3-030-43725-1_13
+
+Certified violation witnesses for smart contracts verification via LLMs
+
+19
+
+21. Foundry: A blazing fast, portable and modular toolkit for Ethereum application
+development written in Rust. https://github.com/foundry-rs/foundry (2025)
+22. Foundry: Forge. https://www.getfoundry.sh/forge (2026)
+23. Foundry: snapshotState cheatcodes. https://getfoundry.sh/reference/
+cheatcodes/state-snapshots (2026)
+24. Foundry: startStateDiffRecording cheatcodes. https://www.getfoundry.sh/
+reference/cheatcodes/start-state-diff-recording (2026)
+25. Gervais, A., Zhou, L.: AI agent smart contract exploit generation. In: Financial
+Cryptography (2026)
+26. Hojjat, H., Rümmer, P.: The ELDARICA Horn solver. In: FMCAD (2018). https:
+//doi.org/10.23919/FMCAD.2018.8603013
+27. Jackson, D., Nandi, C., Sagiv, M.: Certora technology white paper. https://docs.
+certora.com/en/latest/docs/whitepaper/index.html (2022)
+28. Jakubův, J., Janota, M., Piepenbrock, J., Urban, J.: Machine learning for quantifier
+selection in cvc5. International Journal of Approximate Reasoning 189 (2026).
+https://doi.org/https://doi.org/10.1016/j.ijar.2025.109602
+29. Kamath, A., Senthilnathan, A., Chakraborty, S., Deligiannis, P., Lahiri, S., Lal,
+A., Rastogi, A., Roy, S., Sharma, R.: Leveraging LLMs for program verification. In:
+FMCAD (2024). https://doi.org/10.34727/2024/ISBN.978-3-85448-065-5_16
+30. Liu, Y., Xue, Y., Wu, D., Sun, Y., Li, Y., Shi, M., Liu, Y.: PropertyGPT: LLMdriven formal verification of smart contracts through retrieval-augmented property
+generation. In: NDSS (2025)
+31. de Moura, L.M., Bjørner, N.: Z3: An efficient SMT solver. In: TACAS (2008).
+https://doi.org/10.1007/978-3-540-78800-3_24
+32. OpenAI: Gpt-5 docs (2025), https://platform.openai.com/docs/models/gpt-5
+[Accessed: 2025-09-12]
+33. Pirzada, M.A.A., Reger, G., Bhayat, A., Cordeiro, L.C.: LLM-generated invariants
+for bounded model checking without loop unrolling. In: IEEE/ACM ASE (2024).
+https://doi.org/10.1145/3691620.3695512
+34. Qin, K., Zhou, L., Livshits, B., Gervais, A.: Attacking the DeFi ecosystem with
+Flash Loans for fun and profit. In: Financial Cryptography (2021). https://doi.
+org/10.1007/978-3-662-64322-8_1
+35. Schiffl, J., Beckert, B.: A practical notion of liveness in smart contract applications.
+In: FMBC (2024). https://doi.org/10.4230/OASICS.FMBC.2024.8
+36. Scott, J., Niemetz, A., Preiner, M., Nejati, S., Ganesh, V.: MachSMT: A machine
+learning-based algorithm selector for SMT solvers. In: TACAS (2021). https://
+doi.org/10.1007/978-3-030-72013-1_16
+37. Sendner, C., Petzi, L., Stang, J., Dmitrienko, A.: Large-scale study of vulnerability
+scanners for Ethereum smart contracts. In: IEEE S&P (2024). https://doi.org/
+10.1109/SP54263.2024.00230
+38. The Solidity Authors: Contracts. https://docs.soliditylang.org/en/latest/
+contracts.html#contracts (2025)
+39. The Solidity Authors: Receive Ether Function. https://docs.soliditylang.org/
+en/latest/contracts.html#receive-ether-function (2025)
+40. Tihanyi, N., Charalambous, Y., Jain, R., Ferrag, M.A., Cordeiro, L.C.: A new era
+in software security: Towards self-healing software via large language models and
+formal verification. In: AST (2025). https://doi.org/10.1109/AST66626.2025.
+00020
+41. Wu, G., Cao, W., Yao, Y., Wei, H., Chen, T., Ma, X.: LLM meets bounded model
+checking: Neuro-symbolic loop invariant inference. In: ASE (2024). https://doi.
+org/10.1145/3691620.3695014
+
+20
+
+Massimo Bartoletti
+
+and Enrico Lipparini
+
+42. Wu, H., Barrett, C., Narodytska, N.: Lemur: Integrating large language models
+in automated program verification. In: ICLR (2024), https://openreview.net/
+forum?id=Q3YaCghZNt
+43. Xiao, Z., Li, Y., Wang, Q., Chen, S.: Prompt to pwn: Automated exploit generation
+for smart contracts (2025), https://arxiv.org/abs/2508.01371
+44. Zhou, B., Wang, H., Yao, Y., Chen, T., Xu, F., Ma, X.: Simulate, refine and integrate: Strategy synthesis for efficient SMT solving. In: IJCAI (2025). https://doi.
+org/10.24963/ijcai.2025/887, https://doi.org/10.24963/ijcai.2025/887
+45. Zhou, L., Xiong, X., Ernstberger, J., Chaliasos, S., Wang, Z., Wang, Y., Qin, K.,
+Wattenhofer, R., Song, D., Gervais, A.: Sok: Decentralized finance (DeFi) attacks.
+In: IEEE S&P (2023). https://doi.org/10.1109/SP46215.2023.10179435
+
+

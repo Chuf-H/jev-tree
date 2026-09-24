@@ -1,0 +1,994 @@
+GasLiteAA: Optimizing ERC-4337 for Efficient and
+Secure Gas Sponsorship
+Hongxu Su∗ *
+Mingzhe Liu† *
+Jie Xu†
+hsu238@connect.hkust-gz.edu.cn mingzliu5-c@my.cityu.edu.hk jiexu49-c@my.cityu.edu.hk
+Xiaohua Jia†
+Xuechao Wang∗ B
+csjia@cityu.edu.hk xuechaowang@hkust-gz.edu.cn
+∗ The Hong Kong University of Science and Technology (Guangzhou), Guangzhou, China
+
+arXiv:2604.10160v1 [cs.CE] 11 Apr 2026
+
+† City University of Hong Kong, Hong Kong, China
+
+Abstract—ERC-4337, the Ethereum account abstraction standard, simplifies account management and transaction fee payment in decentralized applications by introducing programmable
+smart contract wallets and gas sponsorship via paymasters. However, its heavy reliance on on-chain validation and frequent state
+updates incurs substantial gas overhead, leading to performance
+bottlenecks and limiting scalability in large-scale deployments.
+To mitigate these issues, we propose GasLiteAA, a framework
+that optimize ERC-4337 by offloading paymaster logic to Trusted
+Execution Environments (TEE). GasLiteAA delegates the secure
+execution of stateful gas sponsorship logic and user quota
+management to TEE, enforcing validation rules off-chain while
+anchoring their integrity on-chain via lightweight cryptographic
+attestations. This verifiable offloading architecture significantly
+reduces on-chain computation and storage costs without sacrificing verifiability or decentralization. Experimental results
+demonstrate that GasLiteAA substantially lowers transaction
+fees, while remaining fully compatible with Ethereum Layer 1.
+By balancing security, efficiency, and deployability, GasLiteAA
+provides a practical and scalable approach to gas sponsorship
+for account-abstraction–based decentralized applications.
+Index Terms—Account Abstraction, Smart Contract, ERC4337, ZKP, TEE, Sharding.
+
+I. I NTRODUCTION
+Challenges in Ethereum account management. In recent
+years, Ethereum [1] has established itself as a leading platform
+for decentralized applications, enabling innovations across
+various sectors. However, its broader adoption remains limited
+due to the complexity of wallet management [2]. Externally
+Owned Accounts (EOAs) are the default user identities on
+Ethereum, whose control depends entirely on a corresponding
+private key. However, this authentication model creates a fragile user experience due to key loss, theft, and the inability to
+execute automated transactions [3], [4], [5]. These challenges
+are especially severe in high-frequency transaction scenarios,
+reducing usability and hindering application growth [6], [7].
+Consequently, improving wallet usability and security has become a critical step towards enabling Ethereum’s mainstream
+adoption [8], [9].
+Account Abstraction and ERC-4337. Account Abstraction (AA) [10] is a paradigm that generalizes the concept of accounts on Ethereum by enabling smart contract* Equal contribution. B Corresponding author.
+
+based accounts [11] to perform the same operations as
+EOAs, thereby decoupling transaction logic from authentication mechanisms [12], [13]. Introduced to address the usability
+and security challenges of EOAs, AA allows for advanced
+functionalities such as programmable spending limits, social
+recovery, and multi-factor authentication, significantly improving the user experience [14]. Several major wallet providers,
+including MetaMask [15], Trust Wallet [16], and Argent [17],
+have launched AA wallets, while Ethereum-compatible platforms like Polygon, BNB Chain, and zkSync have also integrated AA. According to Dune Analytics [18], the cumulative
+number of AA-related User Operations (userOps) exceeded
+193.25 million as of 2025.
+ERC-4337 [19] offers a practical and decentralized framework for implementing AA without requiring modifications
+to the core Ethereum protocol. This allows ERC-4337 to be
+deployed on Ethereum mainnet and compatible blockchains
+without compromising stability or backward compatibility.
+However, its reliance on interconnected components such as
+Bundlers, EntryPoint contracts, and Paymasters also increases
+system complexity [20]. Among them, the Paymaster increases
+the flexibility of gas fee management, making gas sponsorship
+more practical across different use cases [21]. By simplifying
+transaction fee management, Paymasters lower the barrier to
+entry for users. Existing projects such as Biconomy [22],
+OpenGSN [23], and StackUp [24] have implemented Paymaster functionalities, offering platforms that streamline user
+interactions and improve usability.
+Computational bottlenecks and ERC-4337 optimization
+challenges. While the Paymaster mechanism provides flexibility in managing transaction fees, it introduces additional
+computational overhead due to the validation logic required
+for secure and abuse-resistant operations. For instance, a
+simple daily gas limit check adds approximately 5,360 gas
+per transaction, representing a 25.5% increase over standard
+transfers [25]. These costs escalate drastically with more
+complex logic such as dynamic limits or multi-factor authorization, increasing transaction fees and reducing network
+throughput. To address this inefficiency, offloading execution
+emerges as a promising pathway to mitigate gas costs, allowing
+computations to be performed off-chain with results submitted
+
+to the blockchain for verification. However, it also introduces
+a new set of critical challenges. Moving validation logic
+off-chain risks compromising the system’s compatibility,
+transparency, and trustworthiness. This motivates the need
+for a solution that improves performance without sacrificing
+Ethereum’s decentralized security guarantees.
+Our solution. To address these challenges, we propose
+GasLiteAA, an optimized framework for ERC-4337 that
+utilizes Trusted Execution Environments (TEE) [26] to offload complex Paymaster validation logic. Unlike rollupbased approaches that introduce an additional execution layer,
+GasLiteAA specifically targets the computational bottleneck
+of gas sponsorship while retaining full integration with the
+Ethereum Layer 1 (L1) mainnet. By shifting state transitions
+to secure TEE enclaves, our framework reduces on-chain overhead without changing ERC-4337’s core architecture or compromising permissionlessness. Crucially, to ensure integrity
+and auditability, GasLiteAA generates verifiable cryptographic
+attestations within the TEE, certifying the correctness of offchain computations. These attestations are anchored on-chain,
+enabling transparent validation of operations without relying
+on centralized intermediaries.
+Contributions. Our main contributions are as follows:
+• We propose GasLiteAA, a framework that leverages TEE
+to optimize ERC-4337 Paymaster validation, enabling
+efficient gas sponsorship without sacrificing verifiability
+or decentralization.
+• We design a comprehensive system including deterministic routing for Bundler coordination, Merkle tree-based
+state commitment, and an economic incentive mechanism
+with staking and slashing to ensure execution consistency
+and system integrity.
+• We implement a robust prototype (28k LoC) and evaluate
+its performance comprehensively. Extensive experiments
+demonstrate up to 48.2% gas reduction compared to
+on-chain verification, along with a 9,300× reduction
+in latency and a 2,200× reduction in memory usage
+compared to Zero Knowledge Proof (ZKP) alternatives.
+II. BACKGROUND AND R ELATED W ORK
+A. Background
+Ethereum’s growth highlights the need for AA. Despite
+Ethereum’s role as the dominant settlement layer, the rigidity
+of traditional EOAs remains a major bottleneck to mainstream
+adoption on L1. Even in 2025, the user experience is plagued
+by the “single point of failure” risk associated with private
+keys. Security reports indicate that phishing attacks and “blind
+signing” incidents on the mainnet continue to result in billions
+of dollars in asset losses annually. Personal wallet compromises now represent a growing share of total ecosystem theft,
+with attackers increasingly targeting individual users, making
+up 23.35% of all stolen-funds activity YTD in 2025. This
+issue is inherent in the limited capabilities of EOAs [27].
+The industry’s decisive shift towards AA is evidenced by
+the recent inclusion of EIP-7702 in the Pectra upgrade [28].
+
+This protocol change allows EOAs on L1 to temporarily
+authorize smart contract logic, signaling a shift toward programmable accounts in Ethereum interaction. GasLiteAA can
+further synergize with EIP-7702 by improving the efficiency of
+programmable-account transactions, thereby accelerating the
+broader adoption of account programmability. Furthermore,
+as L1 evolves into a hub for high-value DeFi and Intentbased architectures, the need for atomic batch transactions,
+session keys, and social recovery has never been greater. AA
+bridges the gap between complex blockchain protocols and
+user safety, turning the mainnet into a more secure and usercentric environment compatible with modern authentication
+methods such as Passkeys [29].
+AA redefines transaction validation on Ethereum. AA
+redefines transaction validation on Ethereum by allowing
+developers to specify custom validity conditions, called “programmable transaction validity”. Unlike Ethereum’s traditional
+model requiring fixed validation rules (e.g., gas balance and
+signature checks), AA enables flexible rule customization
+via Smart Contract Wallets (SCWs) and userOps [30], [31],
+[32]. A notable implementation of AA at the L1 level is
+ERC-4337, which provides a decentralized and backwardcompatible framework for introducing these advanced functionalities without requiring changes to Ethereum’s core protocol.
+ERC-4337 Components and Execution Flow. To realize
+Account Abstraction, ERC-4337 introduces a framework centered around five key components: userOps, Bundlers, the
+EntryPoint, SCWs, and Paymasters. The process begins with
+a user generating a userOp (a data structure describing the
+transaction intent) and submitting it to a Bundler. The Bundler
+performs initial validation and broadcasts the userOp to a
+decentralized mempool. Subsequently, the Bundler aggregates
+multiple operations into a batch and submits them to the
+EntryPoint contract, a singleton hub that coordinates the
+execution. In this flow, the EntryPoint ensures security by
+verifying signatures, nonces, and gas sponsorship eligibility
+through the SCW and Paymaster.
+Transaction Execution and Validation. Once a batch is
+submitted, the EntryPoint triggers the on-chain validation
+logic. It first verifies the userOp through the SCW and then
+consults the Paymaster to determine if it will sponsor the gas
+fees based on predefined rules. If the sponsorship is approved
+and sufficient gas is pre-deposited, the userOp is executed,
+and the Bundler is compensated by either the user or the
+sponsor. In the current implementation of AA, the Paymaster
+and its validation logic are entirely executed on-chain to ensure
+transparency. However, this approach introduces significant
+overhead, as the computational and storage costs associated
+with on-chain validation directly increase gas fees. These additional costs are ultimately borne by the user or the Paymaster,
+highlighting a critical limitation of the existing framework.
+B. Related Work
+The existing Paymaster verification mechanisms can primarily be categorized into two types: traditional on-chain
+
+verification and off-chain signature-based verification. Both
+mechanisms play a crucial role in the implementation of AA,
+offering different advantages and challenges.
+On-chain Paymaster verification. The standard approach, onchain verification, ensures that all sponsorship logic—such
+as checking contract states or managing user quotas—is
+executed directly on the blockchain. This method is the
+foundation of the ERC-4337 reference implementation by
+Eth-Infinitism [33] and is adopted by leading infrastructure
+providers like Safe [34] and Pimlico [35]. For instance, Pimlico’s ERC-20 Paymaster enables users to pay gas fees in
+tokens like USDC by performing the entire currency exchange
+and validation process on-chain to ensure transparency. Furthermore, Layer 2 networks with native AA support, such
+as zkSync [36] and Starknet [37], as well as ecosystemled initiatives like Base’s gasless campaigns [38], rely on
+on-chain logic to maintain permissionless fee management.
+While this model guarantees auditability and security through
+decentralized consensus, it incurs significant computational
+overhead. Every validation rule and state update increases the
+gas cost per userOp, creating a critical scalability bottleneck
+for high-frequency or complex sponsorship scenarios.
+Off-chain Paymaster verification by signature. An alternative approach is the off-chain signature model, often implemented as a “Verifying Paymaster.” In this model, users
+submit transaction details to an off-chain service provided
+by platforms such as Pimlico [35], Alchemy [39], or Biconomy [40]. The service evaluates sponsorship eligibility
+based on private or complex business logic and returns a
+cryptographic signature to be included in the userOp. The
+on-chain Paymaster then merely verifies this signature, which
+significantly reduces gas consumption compared with executing the full validation logic on-chain. While highly efficient, this mechanism introduces significant centralization and
+transparency concerns. The off-chain signer acts as a “black
+box” gatekeeper with unchecked authority to approve or deny
+requests. This lack of auditability can lead to censorship or
+unfairness, as users cannot verify the decision-making process,
+undermining Ethereum’s decentralized ethos.
+III. P ROBLEM S TATEMENT AND S YSTEM M ODEL
+A. Problem Statement
+While off-chain execution resolves the computational bottlenecks highlighted in Section I, it disrupts the native trust model
+of ERC-4337. To optimize performance without sacrificing
+decentralization or security, the following critical challenges
+must be resolved:
+1) Compatibility with ERC-4337: While aiming to optimize ERC-4337 by offloading part of the computational
+burden to off-chain execution, it is critical to ensure seamless
+compatibility with Ethereum’s L1 networks. A viable solution
+must remain fully integrated with the Ethereum mainnet,
+enabling direct interaction with existing decentralized applications (DApps). This requires avoiding separate execution
+layers so that GasLiteAA can be adopted across the Ethereum
+ecosystem without disrupting existing workflows.
+
+2) Decentralization and Auditability: Offloading the onchain Paymaster validation logic to off-chain execution is not
+a novel concept. Some existing solutions adopt a model where
+users submit sponsorship requests directly to sponsors, who
+then use their off-chain data to decide whether to approve
+the transaction. If approved, the sponsor provides a signed
+message that the user submits on-chain to facilitate payment
+by the Paymaster. While this approach reduces on-chain
+overhead, it raises significant concerns about centralization and
+transparency. Since the entire off-chain verification process
+is fully controlled by the sponsor, users lack the ability to
+verify the fairness or correctness of the sponsor’s decisions.
+This centralization compromises auditability and ultimately
+undermines user trust and the integrity of the system.
+3) Execution Consistency: Unlike rollups that operate
+on independent state roots, ERC-4337 userOps are executed
+directly on L1. A critical misalignment arises when offchain validation approves a userOp and updates the off-chain
+UserState, but the subsequent on-chain execution fails. In
+such cases, the on-chain state remains unchanged while the
+off-chain state effectively drifts, leading to inconsistencies. A
+robust framework must therefore guarantee atomicity, ensuring
+that the commitment to the updated UserState is finalized onchain if and only if the corresponding L1 execution succeeds.
+4) Bundler Coordination: For censorship resistance, it
+is preferable to have multiple Bundlers working in parallel.
+However, this can lead to independent processing of userOps,
+causing conflicting UserState updates. Different Bundlers may
+process different userOps, causing off-chain state divergence
+and conflicting on-chain updates that threaten system integrity.
+B. System Model
+We define allocation rules as policies governing how a Paymaster allocates gas resources to users. Each rule is indexed
+by rj and specifies the logic for validating and updating gas
+sponsorship requests. Let ui denote a unique user, t denote a
+discrete time index (e.g., a daily epoch or block height), and
+c represent the gas cost of a pending operation.
+Under rule rj , the specific accounting data required to
+validate user ui at time t is referred to as the UserState,
+(r )
+denoted by St j (ui ). Rather than imposing implementation(r )
+specific constraints, we treat St j (ui ) as an abstract state that
+captures all context needed to enforce the allocation policy
+(e.g., remaining quotas or historical usage).
+Efficient verification is achieved by committing these UserStates off-chain into a Merkle tree. The leaves of this tree
+represent the hashed state of individual users, while the
+(rj ,bi )
+resulting root, denoted by Troot
+, serves as a cryptographic
+commitment to the aggregate state processed by bundler bi
+under rule rj . This root is the only application-level state
+data stored on-chain, explicitly distinguishing application-level
+UserStates from Ethereum’s native AccountState.
+GasLiteAA integrates the system model described above
+into a practical framework by enhancing the standard ERC4337 workflow with TEE-based off-chain computation. By
+shifting the burden of Paymaster rule verification to secure
+
+enclaves, the system maintains the auditability of UserState
+transitions while minimizing on-chain costs. The architecture
+is composed of the following additional modules:
+• Bundler Manager & Reward Buffer: A system governing Bundler participation through refundable stakes
+and a delayed reward pool. This setup deters malicious
+behavior via slashing and allows for recovery in case of
+state inconsistencies.
+• State Manager: Responsible for maintaining the UserStateRoot and its history on-chain to ensure verifiable
+commitments and error recovery.
+• TEE Enclave: A secure off-chain environment where
+allocation rules are executed confidentially. It generates
+cryptographic proofs to certify the correctness of state
+transitions.
+• AttestationOnChainVerifier: An on-chain component
+that validates TEE proofs. Successful verification ensures
+that off-chain calculations are strictly bound to on-chain
+state updates.
+IV. P ROPOSED F RAMEWORK
+A. GasLiteAA Overview
+As shown in Figure 1, GasLiteAA uses a hybrid workflow
+that combines secure off-chain execution with verifiable onchain settlement. The process begins with users submitting
+userOps to the mempool, where a deterministic routing mechanism assigns them to designated Bundlers. Utilizing a TEE,
+the Bundler calculates state transitions based on the UserState
+definitions (Section III-B) and predefined allocation rules. This
+off-chain computation produces an updated UserStateRoot and
+a corresponding TEE Proof. In the subsequent on-chain phase,
+the EntryPoint executes the transactions and anchors the new
+state root to Layer 1. This architecture effectively offloads
+computational overhead while preserving decentralization and
+security. The following subsections detail the sequential steps
+of this workflow.
+B. Detailed System Design
+1) Sending and Routing userOps: To ensure fairness and
+prevent synchronization issues caused by multiple Bundlers
+competing for the same UserState, GasLiteAA employs a
+deterministic routing mechanism. Using the notation defined
+in Section III-B, the system assigns each userOp to a specific
+bundler index bi based on the user identity ui , the current
+block index tblock , and the active bundlers set B:
+
+bi = keccak256(ui ) + tblock mod |B|.
+(1)
+This mechanism ensures intra-block consistency and cyclic
+redistribution across subsequent blocks, guaranteeing eventual
+processing and discouraging “lazy” Bundler behavior. The
+Bundler Manager maintains the active set B via a circular
+indexing system, seamlessly redistributing responsibilities during Bundler churn to preserve continuity. Users can broadcast operations to the general mempool or utilize walletassisted routing to reach the designated Bundler. Finally, Block
+
+Builders verify this assignment during validation to maintain
+censorship resistance.
+2) Off-chain Allocation Execution: Upon receiving the
+userOps, the Bundler manages off-chain execution through a
+sophisticated approach integrated with the on-chain state to
+ensure consistency.
+Bundle Preparation and Pre-validation. The GasLiteAA
+Bundler first aggregates a batch of pending userOps from the
+mempool based on the routing protocol. Before invoking the
+TEE, it performs standard off-chain simulations (e.g., signature
+and nonce checks) to filter invalid requests and prevent resource exhaustion within the enclave. Once a candidate bundle
+B is formed, it is prepared as input for the secure enclave.
+State Transition in TEE Enclaves. Subsequently, the Bundler
+extracts the allocation rule specified in each userOp and
+retrieves the latest Merkle proof for the UserState referencing
+the on-chain UserStateRoot. Within the TEE enclave, the
+bundle B and the current user state St are used to compute
+the updated state St+1 via a state transition function f (St , B).
+The enclave commits these updates by recomputing the
+Merkle Tree Root. The updated leaf for a user ui under rule
+rj is defined as the hash of the user identity and their new
+allocation state:
+(r )
+
+j
+Leaf(ui , rj ) = Hash(ui ∥ St+1
+(ui )).
+
+(2)
+
+The enclave then recursively hashes the updated leaves to
+(rj ,bi )
+obtain the new root node Troot
+. This root represents the
+aggregate state for all users managed by Bundler bi .
+(r ,b )
+To guarantee integrity, the TEE Enclave signs Trootj i using
+its private key kTEE , producing a signature
+(rj ,bi ) 
+σ = SignkTEE Troot
+.
+(3)
+This cryptographic proof ensures the computation is tamperresistant. Once completed, the signed results are submitted to
+the EntryPoint contract for on-chain verification and execution.
+Submit Optimized Bundle. Finally, the Bundler bi submits
+the execution results to the EntryPoint. To ensure atomic
+verification, these results are encapsulated into an optimized
+(b ,r )
+bundle structure, denoted as Bundleopti j . As defined in
+Eq. (4), this structure aggregates the original batch of userOps
+(rj ,bi )
+(Bundle), the updated UserStateRoot Troot
+computed within
+the TEE, and the cryptographic signature σ attesting to the
+validity of the state transition:
+(b ,r )
+
+Bundleopti j =
+
+
+
+
+(rj ,bi )
+Bundle, Troot
+, σ .
+
+(4)
+
+3) On-chain Execution and State Anchoring: In the onchain process, the EntryPoint first verifies the legitimacy
+of the submitting Bundler via the Bundler Manager. Upon
+successful verification, the EntryPoint executes the userOps
+and ensures that the Paymaster covers the associated gas
+fees. The Bundler’s rewards are then accrued in the Bundler
+Reward Buffer, providing an auditable and unified system
+for reward management. Simultaneously, the UserStateRoot is
+updated in the State Manager, and the associated TEE Proof is
+
+Fig. 1: GasLiteAA Framework Overview.
+
+anchored on-chain to guarantee transparency and verifiability.
+The update of the UserStateRoot is atomic with the transaction
+execution. While Bundlers utilize pre-execution simulations
+to minimize failures, any on-chain revert automatically invalidates the proposed state transition, preventing state drift. For
+recovery, the full UserState and its ordered update log are
+persisted on InterPlanetary File System (IPFS), while only the
+committed root is maintained on-chain. If a Bundler becomes
+unavailable or an on-chain execution reverts, the affected
+userOps are returned to the mempool for reprocessing, and
+the valid state can be deterministically reconstructed from the
+last confirmed root and the ordered log.
+4) Verifying Bundler’s Integrity: In GasLiteAA, the integrity of Bundlers is enforced through a combination of
+economic staking and on-chain cryptographic verification.
+Bundlers are required to lock collateral in the Bundler Reward
+Buffer, creating a direct economic deterrent against malicious
+behavior. At the technical level, the AttestationOnChainVerifier validates the correctness of off-chain execution. This validation logic is formalized as VerifyBundle, which mandates
+the simultaneous satisfaction of two conditions: verifying state
+(r ,b )
+consistency against the current on-chain root Trootj i , and
+(rj ,bi )
+authenticating the validity of the proposed new root Troot,new
+via cryptographic signature, as defined in Eq. (5):
+n
+
+o
+(rj ,bi )
+VerifyBundle = VerifyRoot Bundle, Troot
+n
+
+o
+(rj ,bi )
+pub
+∧ VerifySig σ, Troot,new
+, kTEE
+.
+
+(5)
+
+If this verification fails, or if verifiable misbehavior is
+
+reported, the Bundler Manager initiates a slashing procedure,
+forfeiting the Bundler’s stake and rewarding the reporter.
+Together, these mechanisms ensure accountability, security,
+and transparency. Even if the enclave or its signing key kTEE
+is compromised, the impact is confined to Paymaster-level
+gas allocation and UserStateRoot forgery. User assets remain
+protected because every userOp must still pass independent
+on-chain ECDSA signature verification by the SCW.
+V. I MPLEMENTATION AND E VALUATION
+This section evaluates GasLiteAA by benchmarking its
+performance, scalability, and cost-effectiveness against two
+representative paradigms: (1) Native On-chain Verification
+(the ERC-4337 standard), which represents the maximum
+decentralization but is constrained by EVM gas limits; and
+(2) ZKP Verification, a leading cryptographic alternative for
+off-chain verifiable computation. While ZKPs offer trustless
+verification similar to TEE, they differ significantly in computational intensity and proof generation time. By implementing
+all three approaches under identical allocation rules, we aim to
+quantify the trade-offs between TEEs, ZKPs, and traditional
+on-chain execution.
+A. Implementation
+In our implementation, the core components, including the
+EntryPoint, SCWs, and Paymaster, were deployed and tested
+in multiple environments. During local testing, we deployed
+the core smart contracts with Hardhat to simulate userOps
+and smart wallet interactions, validating contract logic before
+testnet deployment. Our local environment was configured
+with Node.js v19.9.0 and Hardhat v2.19.4. After local testing,
+
+the core smart contracts were deployed on the Sepolia testnet
+to verify interactions under real blockchain conditions.
+The Bundler and userOp mempool components were deployed on a Microsoft Azure Hyper-V virtual machine with an
+Intel Xeon Platinum 8370C CPU (2.80GHz, up to 3.49GHz),
+32 GiB of memory, and Intel SGX support. The Bundler’s
+StateUpdate module runs within an Intel SGX enclave, providing tamper-proof execution. Additionally, during Bundler
+execution, an SGX Attestation Report is generated and uploaded to a smart contract on the Sepolia testnet for integrity
+verification. By combining local testing, testnet deployment,
+and TEE-based cloud execution, our implementation ensures
+both functional correctness and security for userOps.
+For the implementation of routing and validation logic, the
+Bundler requests task allocation by signing the current block
+number to authenticate with the server-hosted mempool. Upon
+receiving the batch, the Bundler verifies the ownership of
+each SCW via standard ECDSA signatures. It then parses the
+paymasterAndData field from each userOp to identify and
+inject the specific allocation parameters into the TEE enclave.
+Finally, the resulting execution proofs and updated state roots
+are packaged and submitted to the EntryPoint smart contract
+by invoking the standard handleOps function. To formally
+summarize this hybrid workflow, Algorithm 1 outlines the
+precise execution logic.
+Algorithm 1 Bundler Execution Flow with TEE Integration
+Require: Batch of userOps Bin ; Current on-chain root
+Troot,old ; Active Rules {rj }
+Ensure: Submission payload to EntryPoint
+1: Phase 1: Host Pre-validation
+2: Bvalid ← ∅
+3: for all op ∈ Bin do
+4:
+if SimulateValidation(op) == success then
+5:
+Bvalid .add(op)
+6:
+end if
+7: end for
+8: Phase 2: TEE Execution
+9: (Troot,new , σ) ← TEE E XECUTE(Bvalid , Troot,old )
+10: Phase 3: On-chain Submission
+11: Call handleOps(Bvalid , Troot,new , σ) on EntryPoint
+12: procedure TEE E XECUTE(B, Troot )
+13:
+Load state S from Troot
+14:
+for all op ∈ B do
+
+rj ← ParseRule(op.paymasterAndData)
+ui ← op.sender
+S (rj ) (ui ) ← ApplyRule(S (rj ) (ui ), op)
+end for
+Troot,new ← ComputeMerkleRoot(S)
+σ ← SignkTEE (Troot,new )
+21:
+return (Troot,new , σ)
+22: end procedure
+
+15:
+16:
+17:
+18:
+19:
+20:
+
+The EntryPoint contract safeguards the integrity of off-chain
+computations by invoking the AttestationOnChainVerifier, a
+
+component based on Puffer Finance’s RAVE framework [41].
+It uses the verify_epid() function to validate the submitted userReportData and encodedAttestation. It checks the
+enclave measurement (MRENCLAVE), the freshness of the
+attestation report, and the binding between the enclave identity
+and the attested public key. This validation process incurs an
+additional gas cost of approximately 60,000. Once verified,
+the userOps are processed and committed to the blockchain,
+ensuring that the updates adhere to the allocation rules and
+maintaining system consistency.
+To establish a comprehensive benchmark, we developed
+an alternative implementation of the allocation rules using ZoKrates and an on-chain ZK verifier. We selected
+ZoKrates because of its mature toolchain for generating EVMcompatible Solidity verifiers from high-level circuits. The
+allocation rules were compiled into ZK circuits to evaluate
+the trade-offs between privacy, security, and efficiency. Specifically, we used ZoKrates to compute the witness based on
+allocation constraints, generate a proof ensuring computation
+correctness, and export a verifier for on-chain validation. We
+conducted comparative tests to evaluate the feasibility of using
+ZKPs versus TEE. These tests measured the end-to-end latency
+and on-chain gas consumption, providing insights into the
+performance differences.
+Our evaluations show that the ZK verification function
+verifyTx() requires about 4× as much gas as the
+verify_epid() function used for TEE attestation. Moreover, the total latency for the ZK approach, which includes
+witness generation, proof computation, and verification, is
+substantially greater than that of the TEE-based workflow.
+This indicates that while ZKPs provide trustless verification,
+they incur higher on-chain cost and end-to-end latency than
+GasLiteAA. These performance disparities and scalability
+trade-offs are examined in detail in the following evaluation.
+B. Evaluation
+We evaluated GasLiteAA using 1000 SCWs across three
+distinct scenarios: (1) Infinitism (On-chain): the traditional
+model where rules are verified on the EVM; (2) ZK-Baseline:
+where rules generate a ZKP off-chain for on-chain verification;
+and (3) GasLiteAA: our TEE-optimized framework.
+Experimental Setup. For the experiments, we measured the
+gas consumption, execution time, and resource overhead while
+processing varying batches of userOps, specifically: 1, 20, 50,
+100, 200, 400, 600, 800, and 1000.
+Consistent with the implementation setup, the off-chain
+components for GasLiteAA (TEE) were hosted on the Microsoft Azure Hyper-V virtual machine equipped with an
+Intel Xeon Platinum 8370C CPU (SGX-enabled) and 32 GiB
+of RAM. For a fair comparison, the ZKP generation was
+performed on the same hardware environment.
+The allocation rules used in the tests range in complexity
+(see Tables I and III), defined by user ui , current gas cost c,
+cumulative usage U (ui ), and limit L:
+
+•
+
+Rule 1: Fixed Daily Gas Cost Allocation: Limits a
+user’s cumulative daily gas Uday (ui ) plus current cost c
+against a daily limit Ldaily :
+Uday (ui ) + c ≤ Ldaily
+
+•
+
+Rule 2: Fixed Daily and Global Cap: Adds a global
+constraint where Gday is the total gas consumed by all
+users:
+Uday (ui ) + c ≤ Ldaily ,
+
+•
+
+Rule 3: Frequency and Interval: Enforces a minimum
+interval ∆t since the last operation time tlast , a single-op
+limit Lone , and a window quota Uwin :
+tlast (ui ) + ∆t < tblock ,
+
+•
+
+Gday + c ≤ Ltotal
+
+c ≤ Lone ,
+
+Uwin (ui ) + c ≤ Lwin
+
+Rule 4: Dynamic Daily Limit: Adjusts the limit Ldyn
+based on the wallet balance β(ui ) and historical average
+gas H(ui ):
+Ldyn = Lbase +
+
+β(ui )
+H(ui )
+−
+10 ETH
+10
+
+1) Gas Consumption and Verification Overhead: We first
+analyzed the performance under high load conditions (1000
+userOps) using the most complex allocation logic (Rule 4). As
+shown in Table I, the traditional on-chain approach (Infinitism)
+incurs a prohibitive gas cost of 158.48 million.
+TABLE I: Gas Usage: GasLiteAA vs. Infinitism (Rule 4)
+Batch Size
+(UserOps)
+
+GasLiteAA
+(Total Gas)
+
+Infinitism
+(Total Gas)
+
+Overhead
+(Infinitism)
+
+1
+20
+50
+100
+200
+400
+600
+800
+1000
+
+501 k
+2.04 M
+4.48 M
+8.55 M
+16.72 M
+33.23 M
+49.34 M
+65.72 M
+82.15 M
+
+566 k
+3.08 M
+7.07 M
+13.71 M
+31.89 M
+63.75 M
+95.09 M
+126.78 M
+158.48 M
+
++13.0%
++51.0%
++57.7%
++60.4%
++90.7%
++91.9%
++92.7%
++92.9%
++92.9%
+
+In contrast, both off-chain approaches (GasLiteAA and
+ZK) significantly reduce the total gas cost to approximately
+82 million. It is important to note that the base execution
+gas for the userOps remains constant across both off-chain
+approaches. Consequently, the marginal difference in total gas
+cost (82.15 M vs. 82.33 M) stems entirely from the distinct
+on-chain verification mechanisms: GasLiteAA requires only
+a constant and lightweight signature check (≈ 60,000 gas),
+whereas the ZK approach incurs a higher cost (≈ 235,154
+gas) for verifying the cryptographic proof on-chain.
+Table I compares gas costs across batch sizes under complex
+logic. GasLiteAA demonstrates significantly better scalability,
+maintaining a linear gas growth. In contrast, the Infinitism
+approach suffers from substantial overhead, which nearly
+doubles the gas cost (+92.9%) at high loads (1000 userOps)
+due to expensive on-chain verification operations.
+
+Fig. 2: Off-chain computation latency comparison.
+
+2) Scalability and Resource Constraints: While ZK and
+TEE approaches offer similar gas savings, their scalability
+limits differ fundamentally due to distinct computational bottlenecks. For the traditional Infinitism framework, scalability
+is severely constrained by the Ethereum block gas limit (30
+million). As noted in previous comparisons, a batch of 1000
+userOps requiring 158.48 million gas is impossible to settle
+in a single block, creating a hard ceiling on throughput.
+The ZK approach solves this on-chain gas limitation but introduces a new off-chain scalability hurdle: resource intensity.
+As detailed in Table II, the computational overhead for ZK
+proofs grows significantly with complexity. For complex rules
+(Rule 4), the memory requirement surges to over 26 GB. This
+excessive resource demand hinders horizontal prover scaling
+without prohibitive hardware costs, whereas GasLiteAA maintains a minimal footprint.
+TABLE II: ZK Resource Bottleneck Analysis at 1000 userOps
+across Rules
+Rule Type
+
+Time
+(s)
+
+Memory
+(MB)
+
+Circuit Size
+(MB)
+
+Growth
+(Time)
+
+Growth
+(Mem)
+
+Rule 1 (Simple)
+Rule 2
+Rule 3
+Rule 4 (Complex)
+
+463.84
+513.29
+926.45
+937.18
+
+13,132
+13,146
+15,396
+26,132
+
+2,477
+4,432
+4,030
+5,692
+
++10.6%
++99.7%
++102.0%
+
++0.1%
++17.2%
++99.0%
+
+3) Computational Latency and Real-Time Feasibility: Beyond resource constraints, ZK also faces a critical provingtime challenge. Table II highlights that generating a proof
+for 1000 userOps under Rule 4 requires over 937 seconds.
+As illustrated in Figure 2, which uses a logarithmic scale,
+the ZK method exhibits significant delays compared to other
+approaches. This high latency (over 15.6 minutes) makes the
+ZK approach impractical for real-time applications such as
+high-frequency trading or interactive gaming.
+In contrast, GasLiteAA demonstrates superior performance
+suitable for real-time needs. As shown in Figure 2, it consistently maintains a sub-second latency (≈ 0.1s) with only
+marginal sensitivity to rule complexity. By combining low on-
+
+chain gas costs with negligible off-chain latency, GasLiteAA
+emerges as a practical solution for supporting high-frequency,
+complex account abstraction scenarios efficiently.
+TABLE III: Impact of Allocation Rule Complexity on Gas
+Consumption (1000 userOps)
+Allocation Rule
+
+GasLiteAA
+(Total Gas)
+
+Infinitism
+(Total Gas)
+
+Overhead
+(Infinitism)
+
+Rule 1 (Simple)
+82.15 M
+112.45 M
++36.9%
+Rule 2 (Daily+Total)
+82.15 M
+113.52 M
++38.2%
+Rule 3 (Interval)
+82.15 M
+134.80 M
++64.1%
+Rule 4 (Dynamic)
+82.15 M
+158.48 M
++92.9%
+* GasLiteAA costs remain constant as validation logic is offloaded to TEE.
+
+4) Impact of Rule Complexity and Resource Consumption:
+We further evaluated how the complexity of validation logic
+affects system performance. Table III compares the gas consumption of GasLiteAA versus Infinitism under a fixed load
+of 1000 userOps across four different rules.
+The results show that GasLiteAA offers a critical advantage
+in cost stability. Since the complex validation logic is executed
+off-chain within the TEE, the on-chain gas cost for GasLiteAA
+remains constant (≈ 82.15 M) regardless of rule complexity.
+In contrast, the Infinitism approach executes all logic on the
+EVM. Consequently, as the rule evolves from a simple check
+(Rule 1) to a dynamic historical calculation (Rule 4), the
+gas cost for Infinitism surges from 112.45 M to 158.48 M,
+increasing the overhead from 36.9% to 92.9%.
+
+Fig. 3: Memory resource consumption (RAM) comparison.
+Beyond execution time, resource overhead remains a major
+bottleneck for ZK proofs. Figure 3 shows that memory usage
+for the ZK approach surges to over 26 GB for complex rules,
+while GasLiteAA maintains a minimal footprint (≈ 11.7 MB).
+Furthermore, Figure 4 highlights the storage costs associated
+with proof generation artifacts. The ZK approach consumes
+up to 5.6 GB of disk space or transmission bandwidth for
+complex batches, whereas GasLiteAA maintains a constant,
+lightweight storage requirement (≈ 10.4 MB).
+In sharp contrast, GasLiteAA exhibits robust stability across
+all metrics. The execution time within the TEE increases
+marginally by only 10.3% (from 0.097s to 0.107s), and
+resource consumption remains negligible. This confirms that
+
+Fig. 4: Storage and proof size comparison.
+
+GasLiteAA is uniquely positioned to handle complex, programmable paymaster logic without sacrificing performance
+or demanding high-end hardware.
+VI. C ONCLUSION
+In this paper, we presented GasLiteAA, a TEE-assisted
+framework for ERC-4337 that offloads complex paymaster validation logic to reduce gas consumption while preserving onchain state consistency and verifiability. We established a comprehensive system integrating components such as the userOp
+Routing mechanism, Merkle tree-based state commitment,
+Bundler Manager, TEE Enclave, and AttestationOnChainVerifier, which effectively decouples computational overhead
+from the Ethereum L1 mainnet. Crucially, unlike rollups that
+migrate execution to isolated layers, our framework enables
+complex stateful validation directly on L1.
+We validated our approach through a robust prototype comprising approximately 28k LoC, and our evaluation demonstrates substantial efficiency gains. Specifically, in complex
+scenarios such as the Dynamic Daily Limit rule, traditional
+on-chain validation incurs a 92.9% gas overhead compared
+to our optimized framework. Furthermore, ZK-based alternatives demand up to 26 GB of memory and incur a proving
+latency of 937.18s. Such overhead introduces perceptible
+user latency and increases hardware costs for Bundlers. In
+contrast, GasLiteAA maintains a negligible latency of approximately 0.1s (9,300× reduction) and restricts memory
+usage to just 11.7 MB (2,200× decrease) compared to ZK
+methods. These results position GasLiteAA as a scalable,
+secure, and hardware-efficient solution for high-frequency
+account abstraction scenarios.
+GasLiteAA mitigates the trade-off between programmable
+flexibility and gas efficiency, providing a scalable approach
+to AA. Future work will focus on optimizing bundling strategies, mempool routing, and more specific economic incentive
+mechanisms for bundlers and paymasters to further improve
+throughput, censorship resistance, and long-term sustainability.
+
+R EFERENCES
+[1] V. Buterin et al., “Ethereum white paper,” GitHub repository, vol. 1, pp.
+22–23, 2013.
+[2] D. Sheridan, J. Harris, F. Wear, J. Cowell Jr, E. Wong, and A. Yazdinejad,
+“Web3 challenges and opportunities for the market,” arXiv preprint
+arXiv:2209.02446, 2022.
+[3] Y. Faqir-Rhazoui, M.-J. Ariza-Garzón, J. Arroyo, and S. Hassan,
+“Effect of the gas price surges on user activity in the daos of
+the ethereum blockchain,” in Extended Abstracts of the 2021 CHI
+Conference on Human Factors in Computing Systems, ser. CHI EA
+’21. New York, NY, USA: Association for Computing Machinery,
+2021. [Online]. Available: https://doi.org/10.1145/3411763.3451755
+[4] W. M. Shbair, E. Gavrilov, and R. State, “Hsm-based key management
+solution for ethereum blockchain,” in 2021 IEEE International Conference on Blockchain and Cryptocurrency (ICBC), 2021, pp. 1–3.
+[5] P. Praitheeshan, Y. W. Xin, L. Pan, and R. Doss, “Attainable hacks on
+keystore files in ethereum wallets—a systematic analysis,” in Future
+Network Systems and Security: 5th International Conference, FNSS
+2019, Melbourne, VIC, Australia, November 27–29, 2019, Proceedings
+5. Springer, 2019, pp. 99–117.
+[6] N. Carter and L. Jeng, “Defi protocol risks: The paradox of defi,”
+Regtech, suptech and beyond: innovation and technology in financial
+services” riskbooks–forthcoming Q, vol. 3, 2021.
+[7] S. Werner, D. Perez, L. Gudgeon, A. Klages-Mundt, D. Harz, and
+W. Knottenbelt, “Sok: Decentralized finance (defi),” in Proceedings of
+the 4th ACM Conference on Advances in Financial Technologies, 2022,
+pp. 30–46.
+[8] M. Moniruzzaman, F. Chowdhury, and M. S. Ferdous, “Examining
+usability issues in blockchain-based cryptocurrency wallets,” in Cyber
+Security and Computer Science: Second EAI International Conference,
+ICONCS 2020, Dhaka, Bangladesh, February 15-16, 2020, Proceedings
+2. Springer, 2020, pp. 631–643.
+[9] A. Kumar Singh, I. Ul Hassan, G. Kaur, S. Kumar, and Anmol, “Account
+abstraction via singleton entrypoint contract and verifying paymaster,”
+in 2023 2nd International Conference on Edge Computing and
+Applications (ICECAA). IEEE, Jul 2023 07, p. 1598–1605. [Online].
+Available: http://dx.doi.org/10.1109/ICECAA58104.2023.10212316
+[10] “Account
+abstraction,”
+[Accessed
+12-10-2025].
+[Online]. Available: https://ethereum.org/en/roadmap/account-abstraction/
+#account-abstraction
+[11] E. Elrom, Ethereum Wallets and Smart Contracts. Berkeley, CA:
+Apress, 2019, pp. 173–212. [Online]. Available: https://doi.org/10.1007/
+978-1-4842-4847-8 5
+[12] Q. Wang and S. Chen, “Account abstraction, analysed,” 2023. [Online].
+Available: https://arxiv.org/abs/2309.00448
+[13] H. Jiao, N. Udomlertsakul, and A. Tamprasirt, “Credential control
+balance: A universal blockchain account model abstract from bank to
+bitcoin, ethereum external owned account and account abstraction,”
+2024. [Online]. Available: https://arxiv.org/abs/2402.10616
+[14] S. Wu, L. Wu, Y. Zhou, R. Li, Z. Wang, X. Luo, C. Wang, and K. Ren,
+“Time-travel investigation: Toward building a scalable attack detection
+framework on ethereum,” ACM Transactions on Software Engineering
+and Methodology (TOSEM), vol. 31, no. 3, pp. 1–33, 2022.
+[15] “Metamask,” [Accessed 12-10-2025]. [Online]. Available: https:
+//metamask.io/
+[16] “Trust wallet,” [Accessed 12-10-2025]. [Online]. Available: https:
+//trustwallet.com/?{utm\ source}=cryptwerk
+[17] “Argent,” [Accessed 12-10-2025]. [Online]. Available: https://www.
+argent.xyz/zh
+[18] “Dune,” [Accessed 12-10-2025]. [Online]. Available: https://dune.com/
+queries/3632302/6118358
+[19] V. Buterin, Y. Weiss, K. Gazso, N. Patel, D. Tirosh, S. Nacson,
+and T. Hess, “Eip-4337: Account abstraction via entry point contract
+specification,” 2021.
+[20] Z. Lin, T. Wang, C. Zhao, S. Zhang, Q. Yang, and L. Shi,
+“A measurement investigation of erc-4337 smart contracts on
+ethereum blockchain,” in 2024 International Conference on Computing,
+Networking and Communications (ICNC). IEEE, Feb 2024 02, p.
+1164–1170. [Online]. Available: http://dx.doi.org/10.1109/ICNC59896.
+2024.10556301
+[21] J. Andrews, M. Ciampi, and V. Zikas, “Etherless ethereum tokens:
+Simulating native tokens in ethereum,” Journal of Computer and
+
+System Sciences, vol. 135, p. 55–72, Aug 2023 08. [Online]. Available:
+http://dx.doi.org/10.1016/j.jcss.2023.02.001
+[22] “Biconomy,” [Accessed 06-10-2025]. [Online]. Available: https:
+//legacy-docs.biconomy.io/paymaster
+[23] “Ethereum gas station network (gsn),” [Accessed 06-10-2025]. [Online].
+Available: https://docs.opengsn.org/
+[24] “Stackup,” [Accessed 06-10-2025]. [Online]. Available: https://docs.
+stackup.sh/docs/erc-4337-overview
+[25] “Gas cost calculation,” [Accessed 12-10-2025]. [Online]. Available:
+https://ethereum.org/zh/developers/docs/transactions/#on-gas
+[26] M. Sabt, M. Achemlal, and A. Bouabdallah, “Trusted execution environment: What it is, and what it is not,” in 2015 IEEE Trustcom/BigDataSE/ISPA, vol. 1, 2015, pp. 57–64.
+[27] “2025 crypto crime report,” [Online; accessed 2025-12-31]. [Online].
+Available: https://go.chainalysis.com/2025-Crypto-Crime-Report.html
+[28] V. Buterin, S. Wilson, A. Dietrichs, and lightclient, “EIP-7702: Set Code
+for EOAs,” Ethereum Improvement Proposals, May 2024, available:
+https://eips.ethereum.org/EIPS/eip-7702.
+[29] World Wide Web Consortium (W3C), “Web Authentication: An API
+for accessing Public Key Credentials Level 2,” W3C, Tech. Rep.,
+2021, w3C Recommendation, April 8, 2021. [Online]. Available:
+https://www.w3.org/TR/webauthn-2/
+[30] M. Di Angelo and G. Slazer, “Wallet contracts on ethereum,” in
+2020 IEEE International Conference on Blockchain and Cryptocurrency
+(ICBC). IEEE, 2020, pp. 1–2.
+[31] M. Di Angelo and G. Salzer, “Characteristics of wallet contracts on
+ethereum,” in 2020 2nd Conference on Blockchain Research & Applications for Innovative Networks and Services (BRAINS). IEEE, 2020,
+pp. 232–239.
+[32] M. Tavares, A. Guerreiro, C. Coutinho, F. Veiga, and A. Campos,
+“Wallid: Secure your id in an ethereum wallet,” in 2018 International
+Conference on Intelligent Systems (IS). IEEE, 2018, pp. 714–721.
+[33] D. Tirosh, A. Forshtat, shahafn, Y. Weiss, D. Chiang, L. Siri,
+R. Meissner, K. Gazso, X. Yang, D. Coombs, taek, livingrockrises,
+kaiix, A. Wahid, H. Jadeja, Jammyaa, josh crites, Mikhail, G. John,
+L. Vincent-Genod, bittervec, soham, vuittont60, and Jayden, ethinfinitism/account-abstraction, 1 2025. [Online]. Available: https:
+//github.com/eth-infinitism/account-abstraction
+[34] Safe. Glossary – safe docs. [Online]. Available: https://docs.safe.global/
+home/glossary
+[35] Pimlico. (2025) Pimlico paymasters. [Online]. Available: https:
+//docs.pimlico.io/references/paymaster
+[36] “Introduction - ZKsync Docs — docs.zksync.io,” https://docs.zksync.io/
+zksync-protocol/account-abstraction, [Accessed 19-01-2025].
+[37] Starknet, “What is native account abstraction and how does
+it benefit crypto users? — starknet.io,” https://www.starknet.io/
+blog/account-abstraction/native-account-abstraction/, [Accessed 19-012025].
+[38] Coinbase. Welcome to paymaster – coinbase developer
+documentation. [Online]. Available: https://docs.cdp.coinbase.com/
+paymaster/introduction/welcome
+[39] Alchemy. (n.d.) Alchemy gas manager – web3 wallet tools – alchemy.
+[Online]. Available: https://www.alchemy.com/dapps/gas-manager
+[40] Biconomy. Paymaster — biconomy. [Online]. Available: https:
+//legacy-docs.biconomy.io/paymaster
+[41] Benjamin and A. Forouzani, “Pufferfinance/rave,” 7 2024. [Online].
+Available: https://github.com/PufferFinance/rave
+
+

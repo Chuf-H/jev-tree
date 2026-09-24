@@ -1,0 +1,2240 @@
+Reentrancy Detection in the Age of LLMs
+1st Dalila Ressi
+
+2nd Alvise Spanò
+
+3rd Matteo Rizzo
+
+Ca’ Foscari University of Venice
+Venice, Italy
+dalila.ressi@unive.it
+
+Ca’ Foscari University of Venice
+Venice, Italy
+alvise.spano@unive.it
+
+Ca’ Foscari University of Venice
+Venice, Italy
+matteo.rizzo@unive.it
+
+4th Lorenzo Benetollo
+
+arXiv:2603.26497v1 [cs.CR] 27 Mar 2026
+
+University of Camerino
+Camerino, Italy
+lorenzo.benetollo@unicam.it
+
+Abstract—Reentrancy remains one of the most critical classes
+of vulnerabilities in Ethereum smart contracts, yet widely used
+detection tools and datasets continue to reflect outdated patterns
+and obsolete Solidity versions. This paper adopts a dependabilityoriented perspective on reentrancy detection in Solidity 0.8+, assessing how reliably state-of-the-art static analyzers and AI-based
+techniques operate on modern code by putting them to the test on
+two fronts. We construct two manually verified benchmarks: an
+Aggregated Benchmark of 432 real-world contracts, consolidated
+and relabeled from prior datasets, and a Reentrancy Scenarios
+Dataset (RSD) of 143 handcrafted minimal working examples
+designed to isolate and stress-test individual reentrancy patterns.
+We then evaluate 12 formal-methods-based tools, 10 machinelearning models, and 9 large language models. On the Aggregated
+Benchmark, traditional tools and ML models achieve up to 0.87
+F1, while the best LLMs reach 0.96 in a zero-shot setting. On
+the RSD, most tools fail on multiple scenarios, the top performer
+achieving an F1 of 0.76, whereas the strongest model attains 0.82.
+Overall, our results indicate that leading LLMs outperform the
+majority of existing detectors, highlighting concerning gaps in
+the robustness and maintainability of current reentrancy-analysis
+tools.
+Index Terms—Smart Contracts, Reentrancy, Dependability,
+Static Analysis, Machine Learning, Large Language Models.
+
+I. I NTRODUCTION
+Reentrancy is the archetypal Ethereum vulnerability. Since
+the DAO exploit in 2016 [31], where an attacker drained
+millions of dollars worth of Ether by recursively invoking a
+withdrawal function, it has remained a central concern for auditors, tool builders, and platform operators. Recent estimates
+attribute approximately $908.6M in losses to reentrancy-based
+attacks [64, 19, 47]. Over the years, dozens of detection tools,
+ranging from symbolic execution engines [40] in conjunction
+with SMT solvers [37] to abstract interpreters and patternbased analyzers [56, 32], have been introduced to identify
+reentrancy flaws before deployment. Additionally, a number of
+tools perform runtime monitoring [49], fuzzing [44], tracing
+[66] and other dynamic strategies [34] to detect a variety of
+vulnerabilities after deployment, including reentrancy.
+However, the dependability of this tool ecosystem has degraded over time. Solidity has evolved substantially, especially
+in version 0.8.x series, introducing new language features,
+
+5th Sabina Rossi
+Ca’ Foscari University of Venice
+Venice, Italy
+sabina.rossi@unive.it
+
+revised error semantics, and modernized contract architectures.
+Many detectors have not kept pace: some support only legacy
+compiler versions, others crash on contemporary syntax, and
+several implement outdated notions of reentrancy tied to the
+original “checks-effects-interactions” (CEI) formulation [39].
+As a result, the long-term reliability of these tools, once
+viewed as stable components in the smart contract security
+pipeline, is increasingly uncertain.
+This deterioration also affects machine-learning-based detectors. Most ML models are trained on datasets labeled by
+these same static tools. When detectors disagree, fail to run, or
+produce inconsistent warnings, these errors propagate directly
+into the training labels. The result is an ecosystem where ML
+detectors inherit tool-specific noise, outdated assumptions, and
+false positives, while little is known about their behavior when
+evaluated on clean, manually verified data.
+The goal of this paper is to quantify the robustness, consistency, and long-term reliability of existing tools and AI-based
+techniques. We distinguish between reliability and robustness
+of reentrancy detectors. Reliability refers to the correctness
+of predictions, i.e., the ability to accurately detect vulnerabilities while minimizing false positives and false negatives.
+Robustness denotes the capability of a detector to remain
+functional across evolving Solidity versions, language features,
+and contract patterns. Together, these properties determine the
+overall dependability of a detection approach.
+Our evaluation relies on two complementary datasets. First,
+we build an Aggregated Benchmark by consolidating and manually verifying contracts from three prior academic datasets
+whose authors claim manual labeling. Although this benchmark includes both real contracts and injected vulnerabilities,
+every entry was revalidated through multi-reviewer inspection
+and LLM-assisted explanation analysis, yielding a substantially higher-confidence alternative to tool-labeled corpora
+commonly used in ML research. Second, we construct the
+Reentrancy Scenarios Dataset (RSD), a handcrafted suite of
+minimal contracts (less than 30 lines) covering up-to-date
+Solidity features and patterns, such as error handling, advanced
+modifier-based guards, event emissions and code refactorings
+that obscure syntactic CEI guidelines. RSD is intentionally not
+
+representative of real-world prevalence: its purpose is to stresstest detectors under semantic corner cases, evolving language
+constructs and new habits within the dev community.
+These datasets enable an unprecedented evaluation of the
+dependability of 12 existing detection tools in the modern
+context. Our findings reveal a fractured and unreliable ecosystem, with many tools failing outright on modern contracts,
+disagreeing sharply with one another, or producing high rates
+of false positives and false negatives even on relatively simple
+patterns. In addition, we test 10 traditional ML models and
+9 LLMs. Several LLMs exhibit strong zero-shot performance
+across both datasets, achieving high accuracy without versionspecific maintenance or handcrafted rules. Their explanations
+additionally help identify mislabeled edge cases and clarify
+ambiguous scenarios.
+To structure this investigation, we articulate four research
+questions:
+RQ1: How reliable and robust are existing reentrancy detection tools when applied to modern Solidity codebases
+and evaluated under stress-testing scenarios, given their
+lack of maintenance and outdated compiler support?
+• RQ2: How consistent are the warnings and vulnerability
+reports produced by different tools when applied to the
+same contracts?
+• RQ3: Do general-purpose LLMs demonstrate higher
+dependability and lower maintenance cost compared to
+static analysis and ML-based detectors?
+• RQ4: Can LLM-generated explanations assist human
+experts in identifying mislabeled or ambiguous cases,
+thus improving dataset quality?
+
+•
+
+Overall, our results demonstrate that the reliability of conventional reentrancy detectors has significantly eroded as Solidity evolved, calling into question their suitability as ground
+truth for both developers and ML pipelines. At the same time,
+LLMs (despite lacking formal guarantees) offer surprising
+robustness and semantic generality, outperforming outdated
+static analyzers on both stress tests and manually verified
+benchmarks [24, 29]. These findings underscore the need for
+new hybrid approaches that combine the principled guarantees
+of formal tools with the adaptability of modern AI systems,
+supported by high-quality human-verified datasets rather than
+legacy tool outputs.
+A. Contributions
+A dependability-driven assessment of reentrancy detectors. We provide the first systematic evaluation of the
+long-term dependability of existing reentrancy detection
+tools, revealing widespread fragility caused by maintenance decay, outdated compiler support, and inconsistent
+behavior across detectors.
+• Two complementary datasets enabling reliability and
+stress-test evaluation. We release (i) the Reentrancy
+Scenarios Dataset (RSD), a curated stress-testing suite
+covering modern and challenging Solidity constructs, and
+(ii) an Aggregated Benchmark built from three manually
+•
+
+verified academic datasets. Together, these datasets enable both realistic reliability assessment and controlled
+robustness evaluation.
+• LLMs as a robust alternative and as human-in-theloop assistants. We show that several large language
+models outperform traditional detectors in accuracy and
+robustness while requiring no maintenance. Furthermore,
+their explanations help human auditors identify mislabeled or ambiguous cases, improving dataset quality and
+annotation reliability.
+All code, datasets, and prompts are available in an
+anonymized repository.1
+II. T HREAT M ODEL
+We consider Ethereum smart contracts written in Solidity
+and deployed on an EVM-compatible blockchain. Contracts
+are compiled to bytecode and interact via message calls that
+may optionally transfer Ether. In Solidity, external calls can
+be expressed either through a low-level primitive:
+target.call{value: amount}(data)
+
+where target is an address, amount is an integral expressing
+the amount of Ether being transferred, and data encodes both
+the callee function name and actual arguments; or via a highlevel call:
+I(target).f(args..)
+
+where I is an interface type (e.g. ERC20), f is a function
+name and args.. is the argument list. Both syntaxes are
+compiled into the same CALL bytecode instruction; thus, they
+are equivalent at the runtime level. A transaction may trigger
+a chain of contract invocations, including callbacks into the
+original caller contract - this is what reentrancy is about. The
+contract state consists of its persistent storage variables and
+its internal balance. We assume that the underlying blockchain
+provides standard consensus and integrity guarantees and that
+EVM opcodes behave as specified.
+A. Attacker Capabilities and Goals
+The adversary controls one or more externally owned
+accounts and can deploy arbitrary malicious contracts. The
+attacker can:
+• invoke any public or external function of the victim
+contract in arbitrary order, with chosen calldata and Ether
+values;
+• implement fallback or receive functions that re-enter the
+victim during an external call;
+• create other contracts that can invoke any function of the
+victim in any order at their construction time.
+The attacker cannot break cryptographic primitives, bypass
+the consensus protocol, forge signatures, or alter historical
+blockchain state. We focus solely on vulnerabilities arising
+from the contract logic and its interaction patterns.
+1 Anonymized
+repository:
+reentrancy-detection-benchmarks-A1D7
+
+https://anonymous.4open.science/r/
+
+The adversary’s goal is to exploit reentrancy: gaining
+multiple, nested entries into the victim contract within the
+same transaction so as to violate intended invariants. Typical consequences include draining Ether or tokens, inflating
+balances, tricking a contract to pay more times than intended,
+or otherwise reaching a contract state that would be impossible
+under any non-reentrant execution schedule.
+B. Operational Definition of Reentrancy
+We consider a contract vulnerable to reentrancy if, during
+the execution of one of its entry points:
+1) it performs an external call to attacker-controlled
+code (e.g., via call, high-level interface calls, or
+delegatecall);
+2) upon return from that external call, it performs a state
+update that depends on the attacker’s interaction (e.g.,
+modifying storage associated with msg.sender);
+3) and an attacker can re-enter the contract during the
+external call and drive it to a final state that cannot be
+reproduced by any sequence of the same calls executed
+without reentrancy.
+Conditions (1)-(2) represent the minimal execution structure
+that permits reentrancy; condition (3) characterizes when such
+a structure is exploitable, i.e., when reentrant execution leads
+to a semantically different final state. This definition generalizes the classical checks–effects–interactions (CEI) violation
+pattern: CEI-compliant code is safe by construction, but CEI
+alone is insufficient to cover subtle vulnerable patterns such
+as read-only reentrancy, proxy-mediated flows, or semantics
+that intentionally place a state update after an external call.
+This definition also highlights a central challenge: detecting
+reentrancy requires semantic reasoning, yet most existing
+datasets and tools rely on brittle syntactic rules.
+III. M OTIVATION
+A central challenge in evaluating reentrancy detectors is
+that no agreed-upon definition of reentrancy exists in practice.
+During our preliminary investigation, we found that both academic papers and widely used tools implement incompatible,
+outdated, and often underspecified heuristics. As a result, the
+ecosystem lacks a reliable ground truth: detectors disagree
+systematically, ML datasets inherit contradictory labels [48],
+and many entries in “manually verified” datasets are not
+manually verified at all [28].
+a) Why manually labeled datasets were our starting
+point: To avoid circularity in our evaluation (where tools are
+assessed on data labeled by other tools) we began with the
+only three datasets that explicitly claim human validation: the
+Consolidated Ground Truth dataset (CGT) [28], the HuangGai dataset [18], and the large-scale reentrancy dataset used
+in [67]. However, the CGT paper itself documents inconsistencies in prior manual labeling efforts, showing that the same
+contract is often labeled differently across publications. This
+forced us to reexamine each dataset, rather than rely on legacy
+annotations implicitly shaped by outdated detectors.
+
+b) Why we extracted the rules of existing tools: To
+understand the sources of disagreement, we analyzed how the
+main reentrancy analyzers actually define the vulnerability.
+This analysis revealed a fragmented landscape: every tool
+encodes its own notion of reentrancy, often tied to pre-0.8
+compiler behaviors or the 2016 DAO exploit. We selected a
+group of vulnerability detection tools from the CGT study
+and integrated it with other peer-reviewed tools as well as
+tools often used to label smart contracts for the training of AI
+models.
+We briefly summarize the core rule each tool uses,
+demonstrating how inconsistent the definitions are. Symbolicexecution tools such as Mythril [4] and Conkas [14] flag reentrancy when a low-level CALL forwards more than 2,300 gas
+and is followed by an SSTORE, though Mythril ignores constructor calls and precompiled addresses, whereas Conkas checks
+SMT-feasible storage dependencies. Oyente and Oyente+ [40]
+treat a call as reentrant when its path condition remains
+satisfiable after hypothetical recursive execution. Declarative
+or pattern-based analyzers diverge even more. CCC [62]
+detects reentrancy via Code Property Graph queries requiring
+a user-influenced path from an external call to a subsequent
+state update. Securify [56] issues violation patterns whenever an SSTORE depends on a preceding CALL. Slither [32]
+expands the CEI rule into five distinct variants: counting event
+emissions, unlimited-gas calls, or even certain benign effects
+as reentrancy. Solhint [12] reduces reentrancy to pure CEI
+violations: any state write after an external call triggers a
+warning. Vandal [22] uses Datalog queries on decompiled
+bytecode and flags a CALL as reentrant when it forwards enough
+gas, lacks a mutex, and is followed by state updates. Dynamic
+tools implement yet another definition. Confuzzius [55] flags
+reentrancy only when a concrete execution trace includes a
+CALL with more than 2,300 gas, an SLOAD before it, and an
+SSTORE to the same slot after it—an explicit encoding of the
+DAO exploit. sFuzz [44] deploys contracts to a sandbox chain
+and labels a contract vulnerable only if a synthesized attacker
+contract successfully reenters during fuzzing.
+For some of these tools, the precise rules were not properly
+documented, and we had to look at the implementation to infer
+the exact mechanism applied. In other cases, the paper reported
+the detection of reentrancy, but the rule was not implemented
+in the provided tool [54]. The complete list of the tools we
+examined can be seen in Table I.
+c) Why this fragmentation matters: These rules are not
+minor variations, they are mutually incompatible interpretations of the same vulnerability. Tools disagree on whether:
+• unlimited-gas
+high-level calls are equivalent to
+call() [40];
+• delegatecall should always be treated as reentrant [52];
+• read-only reentrancy is a type of reentrancy vulnerability [65];
+• mutexes or modifiers constitute adequate guards [32].
+Many rules further depend on compiler behaviors that no
+longer hold in Solidity 0.8+, such as automatic underflow
+
+TABLE I: Comparison of analyzers for reentrancy detection.
+Tool
+Aderyn
+AutoAR
+CCC
+ConFuzzius
+Conkas
+ContractWard
+eThor
+DefectChecker
+Manticore
+Mythril
+NPChecker
+Oyente+
+Sailfish
+Securify
+Securify2
+Sereum
+sFuzz
+Slither
+Smartcheck
+Solhint
+teEther
+TotalSol
+Vandal
+
+Version/Commit
+v0.6.5
+N/A
+#c531ae3
+#4315fb7 v0.0.1
+#4e0f256
+N/A
+2023
+N/A
+v0.3.7
+v0.24.8
+N/A
+#060ca34
+v0.1
+v1.0
+N/A
+v1.0
+#48934c0
+v0.11.3
+N/A
+v6.0.0
+#04adf56
+#04adf56
+#d2b0043
+
+Working
+✓
+N/A
+✓
+✓
+✓
+✓
+✓
+✓
+N/A
+✓
+✓
+✓
+N/A
+✓
+✓
+✓
+N/A
+✓
+
+Input
+Source
+Mixed
+Bytecode
+Runtime
+Runtime
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Bytecode
+Runtime
+Runtime
+Source
+Source
+Bytecode
+Bytecode
+Mixed
+Bytecode
+
+Techniques
+Abstract syntax tree traversal and rule-based static pattern matching
+Program dependency graph construction and inter-procedural static analysis
+Code property graph analysis with Cypher query patterns
+Hybrid approach combining symbolic execution, syntax inspection, SMT solving, and fuzzing
+Symbolic execution with syntactic and SMT-based constraint analysis
+Machine-learning-based vulnerability classification with AST feature extraction
+Abstract interpretation, Horn clause resolution, and SMT solving
+Abstract syntax tree analysis with supervised machine learning
+Symbolic execution and SMT-based path exploration
+Symbolic execution with constraint solving and pattern-based vulnerability detection
+Inter-procedural static analysis with constraint solving
+Symbolic execution and SMT constraint analysis
+Symbolic execution combined with static dependency and control-flow analysis
+Datalog-based data-flow and call-dependency analysis
+Declarative intermediate-representation analysis using Datalog compliance and violation rules
+Dynamic taint tracking on Ethereum bytecode during runtime execution
+Feedback-guided fuzzing with transaction sequence generation
+Static pattern matching with inter-procedural data-flow and control-flow analysis
+Abstract syntax tree pattern matching and heuristic regular expressions
+Linting rules and static pattern matching on Solidity source code
+Symbolic execution and SMT-based exploit generation
+Multi-layer analysis combining control-flow, data-flow and inter-procedural dependency
+Bytecode decompilation and Datalog-based static analysis
+
+checks, fallback semantics, and storage access patterns. This
+explains why detectors often break on modern code.
+d) Implications for ground truth: Because each dataset
+in the literature was labeled according to a specific tool’s rule
+(often undocumented, especially in papers of tools detecting
+multiple vulnerabilities) the resulting labels are inconsistent
+[28, 48, 30]. This is why prior work frequently disagrees
+on whether a contract is vulnerable. Using such datasets for
+evaluation or ML training introduces tool-induced bias and
+artifacts [48].
+This fragmentation motivated our approach: (1) extract and
+analyze the actual rules that tools encode; (2) design a unified
+three-step labeling procedure grounded in the execution model;
+(3) re-verify all contracts in existing manually labeled datasets;
+(4) create a second dataset (RSD) to systematically exercise
+scenarios that existing detector rules mishandle.
+Both datasets, as described next, are thus explicitly aligned
+with our threat model and eliminate the tool-defined inconsistencies that have undermined prior evaluations.
+IV. DATASET C ONSTRUCTION
+Because existing datasets often embed tool-induced inconsistencies [28, 48, 30], we construct two new datasets aligned
+with the threat model above. One captures semantic stress
+tests, the other provides high-confidence labels for real-world
+contracts. Below, we describe their construction and the unified
+labeling procedure that ensures consistency across both.
+A. Aggregated Benchmark
+To evaluate detectors on contracts that developers are likely
+to encounter in practice, we first assemble a high-confidence
+benchmark from the largest three prior datasets that explicitly claim manual validation: the Consolidated Ground Truth
+(CGT) [28], HuangGai [18], and the reentrancy study by [67].
+
+Paper
+N/A
+[35]
+[62]
+[55]
+[58]
+[60]
+[52]
+[25]
+[43]
+[59]
+[41]
+[21]
+[56]
+[49]
+[44]
+[32]
+[54]
+[38]
+[42]
+[22]
+
+Repo
+[6]
+[10]
+[2]
+[13]
+[16]
+[3]
+[15]
+[8]
+[9]
+[7]
+[5]
+[12]
+[11]
+[17]
+
+These sources were selected because they contain humanlabeled reentrancy cases rather than tool-generated labels. In
+particular, CGT is itself an aggregated dataset, comprising 13
+different datasets. Among these, some of the most well-known
+are ZEUS [37], SolidiFI [36], SmartBugs Curated [30] and
+SWC registry 2 .
+We aggregate all contracts from these datasets, deduplicate
+them, and filter out those that fail to compile under standard
+Solidity compiler versions (most of the contracts are written
+in Solidity v0.4.x or v0.5.x, with only a few in v0.6.x). Some
+contracts do not compile due to a missing pragma statement in
+the preamble; others do so due to random errors in the code,
+despite the exact compiler version being adopted.
+This yields a pool of 73 579 unique, compilable contracts,
+consisting of 145 potentially reentrant and 73 434 potentially
+non-reentrant instances, summarized in Table II. As documented in [28], even “manually labeled” corpora often contain
+contradictory or inconsistent annotations, motivating the need
+for re-verification under a consistent threat model.
+Manual relabeling under our operational definition. All
+contracts were manually inspected independently by three
+authors in multiple rounds, which eventually led to the definition of the procedure in Section IV-C. This procedure
+operationalizes reentrancy through a combination of externalcall detection, post-call side effects, and semantic state divergence. A final round was then performed to ensure adherence
+to the converged procedure. Authors brought complementary
+expertise: one in programming languages and formal methods
+for reentrancy detection, one in smart contract development
+for Ethereum, and one in vulnerability detection and AI-based
+contract analysis. Disagreements stemmed from occasional
+misapplications of our reentrancy-labeling procedure (cf. Section IV-C), and were resolved through joint inspection of the
+more subtle cases.
+2 https://swcregistry.io/
+
+To enrich the dataset, we selected some contracts from
+the 73 434 potentially non-reentrant contracts considered safe
+in [67]. The criteria used by the authors were that not all the
+tools they used to detect reentrancy on those contracts (Oyente,
+Mythril, Securify, Smartian [26], Sailfish) gave a negative
+response. We used their results to select contracts considered
+safe by at least 4 of those tools, then extracted a subset of this
+large batch with a sampling strategy that balances coverage
+with feasibility, while ensuring inclusion of patterns known to
+confuse analyzers (e.g., modifiers, inheritance, inline effects)
+by using regular expressions. The threshold of 4 agreeing
+tools was selected as a trade-off between label confidence and
+contract diversity. Requiring 5 tools produced an overly homogeneous subset dominated by low-level call patterns, while
+four preserved broader interaction types (including high-level
+calls) without significantly weakening consensus. A threshold
+of 3 tools was not adopted, as it increased the dataset size at
+the cost of reduced confidence in the ground-truth labels. After
+all rounds of manual inspection, numerous contracts originally
+labeled as reentrant were moved to the safe group, and vice
+versa.
+LLM-assisted verification. To further increase confidence,
+we queried several LLMs (gpt-4o, gpt-4.1, o3-mini, o4-mini)
+using a simple prompt requesting a label and explanation.
+Whenever the output label of an LLM disagreed with our
+current label annotation, the same three authors reviewed its
+explanation. In most cases, disagreements were hallucinations;
+in a minority, the LLM highlighted subtle behaviors we had
+overlooked. These cases were re-examined manually and relabeled if necessary. LLMs, therefore, did not label the dataset
+but served as an additional signal to identify edge cases.
+Final benchmark. After this two-step verification (manual
+re-annotation plus LLM-assisted conflict review) the Aggregated Benchmark contains 432 high-confidence contracts: 122
+reentrant and 314 safe. During the process, 28 of the 145
+potentially reentrant contracts were relabeled safe, while 5
+of the 291 sampled potentially safe contracts were relabeled
+reentrant. The resulting benchmark offers far higher label
+reliability than any of the original sources and reflects the
+operational definition established in our threat model.
+
+TABLE II: Aggregated Benchmark Dataset Composition.
+Contracts
+
+Unique Compilable
+Initial
+Raw Count Contracts Contracts
+
+B. Reentrancy Scenarios Dataset (RSD)
+Our analysis of the Aggregated Benchmark, combined with
+observations of tool behavior and LLM explanations, revealed
+recurring blind spots in existing datasets. These include limited
+coverage of modern Solidity 0.8.x features, insufficient representation of alternative external call mechanisms, and a nearcomplete absence of structurally diverse variants. To address
+these gaps, we constructed the Reentrancy Scenarios Dataset
+(RSD), a suite of 143 manually verified Minimal Working
+Examples (MWEs),
+The structure of RSD can be seen in Table III. RSD
+is organized into scenario families (identified by the same
+“code”) reflecting well-known reentrancy patterns and realworld contracts. Each category isolates a distinct source of
+potential reentrancy, such as breakages of the CEI pattern, misuse of guard mechanisms such as nonReentrant and onlyOwner,
+ERC20 token logic, proxy-based delegation, dangerous primitives such as delegatecall and so on. For each scenario, we
+construct multiple variants by applying controlled syntactic
+and structural transformations or by simply injecting certain
+constructs. Variants include function folding (Fold), error
+raising (Error), event emission (Emit), use of modifiers (Mod),
+contract inheritance (Inherit), inlining of side effects within
+a statement (Inline), use of unchecked blocks (Unchecked),
+use of low-level static call (Staticcall), and use of in-place
+subtraction operator (Underflow). These variants do not fabricate unrealistic behaviors; rather, they preserve the original
+reentrant control flow and EVM semantics while representing
+syntactic and structural variations commonly found in realworld contracts, precisely targeting patterns that challenge
+both static analyzers and LLMs.
+Table III summarizes the RSD by category, including the
+number of safe and vulnerable instances per scenario family,
+the reentrancy type involved, a short description, and the
+main variants explored. Each category is identified by a code
+number and a name prefix. We now showcase code examples
+only for the most representative scenarios, and refer the reader
+to the full dataset included in the supplementary material.
+Basic (00). The simplest scenario features one function
+performing an external call that can reenter into itself3 .
+mapping (address => uint256) public bal;
+function withdraw(uint256 amt) public {
+require(bal[msg.sender] >= amt, "No funds");
+(bool success, ) = msg.sender.call{value:amt}("");
+require(success, "Call failed");
+bal[msg.sender] -= amt;
+}
+
+# Reentrant in CGT [28]
+# Reentrant in HuangGai [18]
+# Reentrant in Reentrancy Study [67]
+
+300
+22
+46
+
+296
+22
+40
+
+93
+21
+31
+
+The state update after the external call violates the CEI
+practice and leads to potential attacks.
+
+Total Reentrant (before manual verification)
+Total Reentrant (after manual verification)
+
+368
+145
+
+358
+120
+
+145
+120
+
+SingleMod (03). To programmatically prevent reentrancy,
+contracts may implement a mutex-like mechanism using a
+global boolean flag. This flag is typically tested and set at
+
+# Non-Reentrant in Reentrancy Study [67]
+
+123,169
+
+118,422
+
+73,434
+
+Total Non-Reentrant (before manual verification)
+Total Non-Reentrant (after manual verification)
+
+123,169
+287
+
+118,422
+312
+
+73,434
+312
+
+432
+
+432
+
+Total in Aggregated Benchmark
+
+3 The state variable bal is defined once here and referenced from most
+snippets in this section.
+
+TABLE III: Scenario taxonomy of the Reentrancy Scenarios Dataset (RSD). Categories group MWEs exhibiting similar
+structural patterns.
+Code
+00
+
+Name Prefix
+Basic
+
+00
+00
+00
+00
+01
+02
+03
+04
+05
+06
+07
+08
+09
+09
+09
+09
+10
+11
+12
+13
+13
+13
+14
+15
+
+BasicConst
+BasicCross
+BasicNoChecks
+BasicNoCall
+SingleMutex
+CrossMutex
+SingleMod
+CrossMod
+Send
+Transfer
+MixedSend
+MixedTransfer
+ERC20
+ERC20OnlyOnce
+ERC20Staking
+ERC20StakingPull
+OnlyOnce
+Proxy
+OnlyOwner
+Loop
+LoopCrossMod
+LoopCrossMutex
+DelegateCall
+ReadOnly
+
+#Safe
+8
+
+#Ree
+7
+
+Reentrancy Type
+single function
+
+Description
+Basic DAO in multiple variants and flavours
+
+1
+0
+1
+1
+4
+4
+5
+5
+6
+4
+3
+2
+7
+2
+3
+3
+2
+3
+1
+1
+3
+3
+0
+3
+
+1
+1
+1
+0
+6
+4
+8
+8
+0
+0
+3
+2
+10
+1
+3
+3
+0
+0
+1
+1
+4
+4
+4
+3
+
+single function
+cross function
+single function
+single function
+single function
+cross function
+single function
+cross function
+single function
+single function
+single function
+single function
+single function
+single function
+single function
+single function
+single function
+none
+cross function
+single function
+cross function
+cross function
+delegatecall
+cross contract
+
+Basic DAO with constant address as target
+Basic DAO in a cross-function setting
+Basic DAO implementing CEI and omitting the checks part
+Dummy contract without external calls
+DAO-like with flag-based mutex protection in a single function settings
+DAO-like with flag-based mutex protection in a cross-function setting
+DAO-like with a modifier guard in a single function settings
+DAO-like with a modifier guard in a cross-function setting
+DAO-like using send primitive (always safe)
+DAO-like using transfer primitive (always safe)
+Send primitive followed by a low-level call
+Transfer primitive followed by a low-level call
+Donations via ERC20 tokens mixing various high-level calls
+Donations via ERC20 tokens that can occur only once per user
+Staking application with ERC20 tokens
+Staking application with ERC20 tokens including withdrawal
+DAO-like where withdrawal can occur only once per user (always safe)
+Proxy contract forwarding calls to a given target
+Special guard checking if the sender is the original owner of the contract
+Loop containing CEI-breaking code
+Loop containing CEI-breaking code in a cross-function setting
+Loop guarded by mutexes
+Delegate calls are always vulnerable under our definition
+Modifications in the state of one contract make another vulnerable
+
+the beginning of the code section that performs an external
+call, and reset in the epilogue. Unlike traditional mutexes
+in concurrent systems, atomicity is not required here, as the
+Ethereum execution model is inherently sequential. Using
+a mutex to guard reentrant functions enables developers to
+intentionally deviate from the CEI pattern, safely performing
+state updates after external calls without exposing the contract
+to reentrancy vulnerabilities. This pattern can be implemented
+in a couple of equivalent ways - either manually, or through
+a Solidity modifier that implements a reentrancy guard:
+modifier nonReentrant() {
+require(!flag, "Locked");
+flag = true;
+_;
+// placeholder for the function body
+flag = false;
+}
+function withdraw(uint256 amt) nonReentrant public {
+require(bal[msg.sender] >= amt, "No funds");
+(bool success, ) = msg.sender.call{value:amt}("");
+require(success, "Call failed");
+bal[msg.sender] -= amt; // effect after call is ok
+}
+
+Although the snippet above illustrates a non-reentrant sample, flawed implementations of this pattern may still introduce
+reentrancy vulnerabilities, such as wrongly implementing the
+boolean flag management or forgetting the require statement.
+CrossMod (04). This category includes contracts composed
+of multiple functions, where one performs an exploitable
+external call. Despite the reentrancy guard, an attacker can
+still re-enter other public functions:
+function transfer(address to, uint256 amt) public {
+require(bal[msg.sender] >= amt, "No funds");
+bal[to] += amt; // reentering here alters state
+bal[msg.sender] -= amt;
+
+Variants
+Emit, Error, Fold, Staticcall,
+Unchecked, Inline
+
+Fold, Underflow
+Underflow, Unchecked
+Fold, Underflow
+Fold, Underflow
+Emit, Unchecked
+Unchecked
+Fold, Emit
+Emit
+Mod, Inheritance, Staticcall
+
+Mod
+Staticcall
+
+Staticcall
+
+}
+function withdraw(uint256 amt) nonReentrant public {
+require(bal[msg.sender] >= amt, "No funds");
+(bool success, ) = msg.sender.call{value:amt}("");
+require(success, "Call failed");
+bal[msg.sender] -= amt;
+}
+
+Such scenarios may be exploited in subtler ways compared
+to direct single-function reentrancy: the reentrant manipulation
+of the contract state can result in unintended behaviors, such
+as altered payment amounts, even when the attack does not
+involve direct theft of funds.
+Send/Transfer (05/06). Solidity provides the send and
+transfer primitives as methods of the address built-in type.
+These must not be confused with other send or transfer
+methods belonging to interfaces (e.g. ERC20) or third-party
+libraries. The two primitives differ only for their signature:
+send returns a boolean indicating whether the operation has
+succeeded, while transfer simply reverts the transaction automatically when it fails.
+function withdraw(uint256 amt) public {
+require(bal[msg.sender] >= amt, "No funds");
+bool success = payable(msg.sender).send(amt);
+require(success, "Call failed");
+bal[msg.sender] -= amt; // effect after call is ok
+}
+
+Both primitives, however, do not allow reentrancy despite
+invoking the receive/fallback function on the target address (if
+non-EOA), thanks to a hard limit in the gas at the avail of the
+target (2300 at the time of writing). Such a small amount does
+not provide a malicious callee with enough gas to re-enter.
+
+ERC20 (09). The ERC20 standard for managing fungible
+tokens on Ethereum is defined as a well-known interface in
+Solidity, which specifies a set of functions and events [1].
+Contracts implementing this interface typically entail explicitly
+type-casting an address to the ERC20 interface and then invoking
+its methods.
+mapping (address => bool) private donated;
+function donate(address tok, address to,
+uint256 amt) public {
+require(!donated[msg.sender]);
+require(IERC20(tok).balanceOf(msg.sender) >= amt * 2, "Need
+twice");
+bool success = IERC20(tok).transfer(to, amt);
+require(success, "Donation failed");
+donated[msg.sender] = true; // side-effect
+}
+
+Invoking balanceOf and transfer delegates execution to an
+external contract whose behavior is unknown, as it may reenter the caller function or perform other malicious operations.
+In general, scenarios based on ERC or any other interface can
+be reduced to the same case: an explicit type-cast from an
+address to a contract or interface type, when followed by a
+method invocation, is considered a high-level call. And that
+is equivalent to a low-level call under the following reversible
+syntactic transformation:
+↭
+
+e0 . call (abi . encodeWithSignature(“f(τ1 , .., τn )”, e1 , .., en ))
+I(e0 ).f(e1 , .., en )
+where expressions e0 : address, ei : τi for all i ∈ [1, n] and
+I is an interface type name defining the function signature
+f(τ1 , .., τn ). The two syntaxes make the Solidity compiler emit
+the same CALL instruction, hence they are equivalent from the
+point of view of the bytecode. For analyzers processing Soldity
+code, though, they appear different.
+OnlyOwner (12). Another commonly used reentrancy
+guard is the onlyOwner modifier, which restricts access to
+specific functions by ensuring that the caller is the contract’s
+deployer (also known as the owner).
+modifier onlyOwner() {
+require(msg.sender == owner, "Not authorized");
+_;
+}
+
+The modifier is often used in place of nonReentrant, although
+it just enforces an access control policy. To truly avoid reentrant attacks, especially in cross-function scenarios, a mutex
+shared among all public/external functions is required.
+C. Labeling Procedure
+Both the Aggregated Benchmark and the RSD have been
+labeled according to a unified three-step procedure, not intended as a full formalization of reentrancy but as a coherent
+operational definition ensuring consistency across datasets.
+The first two steps rely on transformations and detection
+patterns that are syntactic in nature, aided by a slight amount
+
+of type information. The third step introduces the notion of
+contract state and ventures into the territory of semantics,
+refining the detection and ruling out some false positives.
+Intuitively, given a Solidity contract, we begin by unfolding
+local functions (Step 1). We then search in the unfolded code
+for external calls followed by side-effects (Step 2). If none are
+found, the contract is classified as safe; otherwise, a candidate
+reentrancy is identified and subjected to an additional semantic
+analysis (Step 3). This final step compares the contract state
+produced by executing the nested reentrant calls with the
+state obtained if the same calls were executed as independent
+transactions in sequence. In other words, we contrast the
+outcome of mutually recursive reentrant executions with the
+outcome of their flattened, sequential counterparts. If the
+two outcomes coincide, the contract is deemed safe (w.r.t.
+reentrancy); otherwise, it is vulnerable to reentrancy.
+Compared to prior systems, our procedure captures both
+traditional CEI-breaking patterns and advanced cases (e.g.,
+read-only and cross-contract reentrancy) under a unified criterion. It diverges from traditional approaches [40, 19, 47] by
+systematically flagging delegatecalls as exploitable, while excluding emit and error from effects. Also, a flat normalization
+of modifiers, local calls, and inheritance reduces constructs to
+a small core, avoiding ad hoc rules and limiting subtle false
+negatives.
+Step 1. Unfolding. The first step performs a semanticpreserving transformation of a Solidity contract through the
+unfolding of local function calls and of a few other language
+constructs. Local function calls exhibit no object expression
+on the left-hand side of the dot and have syntactic form
+f(e1 , ..., en ) where n ≥ 0, e1 .. en are arguments of any type,
+and f is a function name identifier. Notable exceptions are calls
+of the form this.f(e1 , ..., en ), which the Solidity compiler
+treats as external calls and are therefore not unfoldable.
+Function unfolding is a well-studied program transformation
+technique [23, 57, 46] whereby a function call is systematically replaced with the body of its definition, with actual
+parameters substituted for formal ones. Given a function
+f (x1 : τ1 , .., xn : τn ) S, with S = {S1 ; ...; Sm } being the
+function body, where n ≥ 0, m ≥ 1, x1 .. xn are parameters
+annotated with their types τ1 .. τn and S1 ..Sm are statements,
+by unfolding each call expression in S we obtain a function
+f ′ (x1 : τ1 , .., xn : τn ) S ′ with S ′ = {S1′ ; ...; Sk′ }, with
+k ≥ m. This process is repeated for each entry-point in the
+input contract, i.e. functions marked with external or public,
+as well as constructors, until the whole input contract consists
+of unfolded functions.
+Unfolding also applies to the following language constructs,
+requiring just a trivial substitution mechanism:
+• Inheritance: each member (state variable or function)
+defined in a superclass (parent contract) is embedded in
+the subclass (derived contract), and unfolding of local
+functions is applied to the resulting entry-points. The
+embedding is recursive and terminates at the root of the
+hierarchy.
+
+Modifiers are unfolded by substituting the prologue and
+the epilogue code segments into the functions utilizing
+them and eventually applying local function unfolding to
+the result.
+After unfolding, functions marked with private or internal
+are removed and only entry-points are left.
+•
+
+Step 2. Detecting Vulnerable External Calls. We define a
+mechanism for detecting violations of the CEI guideline in
+unfolded code. The mechanism is based on both syntactic
+patterns in conjunction with type information; in particular,
+the types of Solidity expressions are required.
+We introduce a limited set of blacklisted primitives and
+language constructs performing external calls:
+• Low-level calls: expressions of form e0 .call(e1 ) where
+expression e0 : address and argument e1 : bytes.
+• High-level calls: expressions of form e0 .f(e1 , ..., en )
+where n ≥ 0, e1 .. en are arguments of any type, f is a
+function name identifier, e0 : τ is the result of an explicit
+type-cast (either in-place or earlier in the scope) of form
+τ (e), where e : address.
+The first bullet point detects proper invocations to the call
+primitive. Types are required to rule out invocations of userdefined methods named call. The second bullet point detects
+external calls that exhibit an address type-cast into an interface
+or contract type name.
+For each unfolded entry-point function f ′ (x1 : τ1 , .., xn :
+τn ) S ′ with S ′ = {S1′ ; ...; Sk′ }, f ′ is considered reentrant if
+and only if both the following conditions hold:
+′
+′
+• ∃Si ∈ S , for some i ∈ [1, k], performing an external call
+belonging to the set of blacklisted calls;
+′
+′
+• and ∃Sj ∈ S such that j > i performing some side
+effect on a state variable.
+The following statements are considered side effects:
+• the assignment statement e1 = e2 , where e2 is an
+expression of any form and e1 belongs to the following
+forms:
+– plain identifiers of form x that belong to the contract
+state variables (local variables are ignored);
+– field select e.x, where expression e : τ such that τ
+is a contract or struct type and x is a field of τ ;
+– array subscript e[e′ ], where e : τ [] and e′ : uint;
+• statements
+including a subexpression of form
+e0 .delegatecall(e1 ) where expression e0 : address
+and argument e1 : bytes.
+Event emission (emit) and other special statements such
+as require, assert, error, and revert are not considered side
+effects. When Step 2 detects a side effect after an external
+call, the contract is marked as candidate reentrant and Step 3
+is necessary to rule out false positives; otherwise it is marked
+as safe and the procedure stops.
+Step 3. Contract State Comparison.
+We introduce the notion of state of a contract as the tuple
+of state variables, i.e., global fields therein defined, plus the
+
+state of the contract internal balance. Such state can either
+be valid or invalid due to an error (⊥). By error, we mean a
+transaction revert, whether deliberately triggered by the user
+code or induced by the EVM during execution.
+Let σ0 denote the contract state prior to the invocation of
+a candidate reentrant function f , and let σn denote the state
+resulting from n reentrant invocations of f within a single
+transaction. Similarly, let σn′ denote the state produced by n
+independent non-reentrant calls to f , each executed in separate
+transactions. A contract is vulnerable to reentrancy if and
+only if σn ̸= σn′ , meaning that chaining through reentrant
+calls induces an observable divergence in the state that would
+not arise under isolated executions. Error states make no
+exception: when both executions terminate in error, i.e. when
+σn = σn′ = ⊥, the contract is deemed safe. Conversely, if
+either σn or σn′ becomes unreachable due to an intermediate
+error, i.e. a state transition σi = ⊥ or σi′ = ⊥ for some i < n,
+then the contract is classified as reentrant. To be considered
+safe, a contract must therefore reach the same state, whether
+valid or not, in the same number of steps in both forms, i.e. as
+a single transaction performing reentrant calls and as separate
+sequential transactions.
+While the procedure outlined above is presented at a semiformal level, it is designed as a reproducible workflow for
+manual labelling by expert human analysts. For sufficiently
+simple programs with a manageable number of external calls,
+each step is practical to perform, including step 3, despite its
+semantic nature. A complete example of application of the
+procedure is available as supplementary material4 .
+V. M ETHODOLOGY
+In this section we delve into the details of how we run the
+tool suite presented in Table I on our two datasets, and how we
+eventually extracted the relevant information from their output
+logs in order to compute the proper metrics.
+A. Experimental Setup
+Experiments utilized the two verified datasets: the Aggregated Benchmark and the Reentrancy Scenarios Dataset
+(RSD). For tool analysis, we adopted tools from Table I, and
+used SmartBugs 2.0 [27] to collect the results needed to assess
+reentrancy detection performance.
+All non-LLM models were evaluated through 3-fold crossvalidation. Traditional ML models used scikit-learn v1.6.0
+with TF-IDF features (max 2048) derived from Solidity code,
+optimizing hyperparameters via a grid search. DL models were
+implemented with PyTorch v2.4.1 and transformers v4.47.0,
+including a BiLSTM (hidden size 128) model using CodeBERT embeddings and a fine-tuned version of CodeBERT
+(microsoft/codebert-base), trained for up to 20 epochs with
+a learning rate of 1 × 10−3 and a batch size of 32, guided by
+a fixed validation set for early stopping. For the RSD, each
+training set fold was augmented with the entire Aggregated
+Benchmark to improve learning.
+4 Relative path from repository root: labeling precedure example.pdf
+
+LLMs were evaluated zero-shot with a temperature of 0
+to ensure deterministic outputs and reproducibility across
+runs, following empirical evaluations of LLM-based program
+analysis [45]. Beyond specifying the output format, the prompt
+represents a less formal version of the labeling procedure
+described in Section IV-C, defining external calls, state modifications, and reentrancy guards, and guiding the model to
+recognize complex scenarios such as cross-function and crosscontract reentrancy. Full prompt structures are available in our
+code repository5 .
+Commercial LLMs were queried via vendor APIs from
+April 1 to May 20, 2025. Model snapshots used include
+gpt-4o-2024-08-06, gpt-4.1-2025-04-14, o3-mini-2025-01-31,
+o4-mini-2025-04-16;
+gemini-2.0-flash-001,
+and
+gemini-2.5-flash-preview-05-20. Explanations from o3-mini
+for 146 contracts in the Aggregated Benchmark were rated by
+three of the authors in a within-subject, randomized design,
+on a 5-point Likert scale. This evaluation was complemented
+by o4-mini’s analysis of all o3-mini explanations. Alongside
+commercial LLMs, we experimented with open-source
+models queried through their latest snapshots (December
+2025) pulled from the Ollama repositories. A preliminary
+analysis of model language generation performance by size
+showed that small models (fewer than 10B parameters) were
+inadequate for the task at hand. Namely, we experimented
+with Gemma3:4b and Llama3.1:8b: they both struggled to
+generate structured output in a parsable JSON format, and
+even when they succeeded, their classification accuracy was
+underwhelming (with a strong bias towards classifying all
+contracts as safe). Thus, we shifted our focus towards the
+largest models that could fit consumer hardware (all local
+experiments were conducted on an NVIDIA GTX 5080 GPU).
+We selected three state-of-the-art mid-size LLMs for which
+we report accuracy performance: gpt-oss:20b, qwen3:14b,
+phi4:14b.
+B. Evaluation metrics
+The results derived from our two datasets (Table IV) highlight distinct capabilities and have important implications for
+reentrancy detection. For each row, in addition to Accuracy
+and F1 score, we report Precision and Recall, as these represent two critical aspects of our analysis. Given a detector’s
+predictions, let TP, FP, TN, and FN denote true positives,
+false positives, true negatives, and false negatives, respectively.
+We compute:
+Accuracy =
+
+TP + TN
+TP + TN + FP + FN
+
+(1)
+
+TP
+TP + FP
+
+(2)
+
+TP
+TP + FN
+
+(3)
+
+2 · Precision · Recall
+Precision + Recall
+
+(4)
+
+Precision =
+Recall =
+F1score =
+
+5 Relative path from repository root: src/llms/prompts.py
+
+Low precision indicates a high number of false positives,
+a common criticism of static and formal-methods-based tools.
+Low recall, on the other hand, corresponds to a high number
+of false negatives—something a vulnerability detector should
+aim to minimize. As the last metric, we report the error
+rate. For each tool and each contract, the detection output is
+considered an error/fail if the tool exited with an error code
+and did not provide any vulnerability in the list of possible
+vulnerabilities. While we initially discarded all outputs with
+exit codes different from 0, we observed that tool performance
+decreased drastically, so we applied this mitigation.
+VI. R ESULTS
+We present the results of our experiments on both the
+Aggregated Benchmark and the RSD in Table IV, divided into
+horizontal groups. The first group includes detection tools and
+analyzers based on formal methods; the second group presents
+machine learning techniques and vanilla networks; the third
+group gathers commercial LLMs (called by API) as well as
+models installed locally (separated by a thin horizontal line).
+For each group and for each column, we underline the best
+result for the group, and mark the best result overall (of the
+whole column) in bold. For machine learning techniques, we
+also report the standard deviation, while the error is missing
+from both the machine learning and LLMs categories because
+it does not apply (the models always provide an answer).
+A. RQ1: How reliable and robust are existing reentrancy
+detection tools when applied to modern Solidity codebases
+and evaluated under stress-testing scenarios, given their lack
+of maintenance and outdated compiler support?
+To answer this question, we analyze the error rates reported
+in Table IV. Among the 11 tools running on the Aggregated
+Benchmark, only 7 can process contracts in the RSD dataset.
+Of these, just 5 complete the analysis without failures. A
+notable exception is Aderyn, a recently developed tool that
+focuses exclusively on newer Solidity versions. CCC and
+Oyente+ also show broader version support. Across the RSD,
+tools tend to either fully support or entirely fail on contracts
+(with Confuzzius and Vandal being the only partial cases).
+Older tools that remain actively maintained — such as
+Mythril, Slither, and Solhint — still encounter a substantial
+number of errors even in the Aggregated Benchmark. This
+can be attributed to the wide range of compiler versions in
+the dataset and the numerous syntax and semantic changes
+introduced within Solidity 0.4.x and 0.5.x. Moreover, most
+analyzers operate at the bytecode (EVM opcode) level, where
+historical differences in EVM revisions further complicate
+compatibility. High error rates also influence the interpretation
+of performance metrics. For instance, Securify reports 100%
+precision in the RSD dataset primarily because many contracts
+it fails to analyze are labeled as reentrant, inflating the metric.
+Overall, tool performance degrades noticeably when moving
+from the Aggregated Benchmark to the RSD, even when
+considering only analyzers that do not report errors.
+
+TABLE IV: Model Performance Metrics on two datasets: Aggregated Benchmark and RSD.
+
+Recall
+0.66
+0.62
+0.78
+0.48
+0.75
+0.42
+0.48
+0.24
+0.95
+0.36
+0.52
+
+F1 Score
+0.76
+0.75
+0.72
+0.61
+0.83
+0.58
+0.65
+0.36
+0.92
+0.51
+0.58
+
+Error (%)
+100.00
+25.46
+15.97
+18.18
+7.22
+0.00
+0.00
+25.54
+45.14
+0.00
+0.69
+68.72
+
+Accuracy
+0.66
+0.58
+0.58
+0.67
+0.60
+0.74
+0.55
+0.52
+
+Precision
+0.62
+0.74
+0.57
+0.67
+0.72
+0.71
+0.59
+0.57
+
+Recall
+0.79
+0.24
+0.61
+0.66
+0.32
+0.82
+0.28
+0.25
+
+F1 Score
+0.70
+0.36
+0.59
+0.67
+0.45
+0.76
+0.38
+0.34
+
+Error (%)
+0.00
+0.00
+12.59
+100.00
+0.00
+0.00
+100.00
+100.00
+100.00
+0.00
+0.00
+78.24
+
+gradient boosting
+gnb
+knn
+logistic regression
+random forest
+svm
+xgboost
+codebert
+lstm
+ffnn
+
+0.90 ± 0.04
+0.82 ± 0.05
+0.88 ± 0.01
+0.80 ± 0.06
+0.90 ± 0.04
+0.84 ± 0.04
+0.91 ± 0.02
+0.90 ± 0.13
+0.86 ± 0.12
+0.96 ± 0.01
+
+0.87 ± 0.04
+0.70 ± 0.06
+0.85 ± 0.13
+0.93 ± 0.12
+0.90 ± 0.07
+0.93 ± 0.12
+0.88 ± 0.08
+0.82 ± 0.24
+0.76 ± 0.17
+0.85 ± 0.03
+
+0.76 ± 0.11
+0.65 ± 0.12
+0.74 ± 0.13
+0.33 ± 0.12
+0.73 ± 0.13
+0.51 ± 0.16
+0.79 ± 0.10
+0.96 ± 0.03
+0.96 ± 0.03
+0.89 ± 0.03
+
+0.81 ± 0.05
+0.67 ± 0.07
+0.78 ± 0.01
+0.47 ± 0.12
+0.80 ± 0.07
+0.64 ± 0.09
+0.83 ± 0.02
+0.87 ± 0.14
+0.83 ± 0.11
+0.86 ± 0.02
+
+-
+
+0.62 ± 0.02
+0.58 ± 0.03
+0.62 ± 0.01
+0.49 ± 0.01
+0.63 ± 0.03
+0.50 ± 0.00
+0.72 ± 0.03
+0.65 ± 0.06
+0.60 ± 0.05
+0.61 ± 0.03
+
+0.63 ± 0.03
+0.71 ± 0.05
+0.62 ± 0.01
+0.33 ± 0.12
+0.64 ± 0.03
+0.33 ± 0.01
+0.72 ± 0.03
+0.67 ± 0.07
+0.62 ± 0.06
+0.62 ± 0.03
+
+0.62 ± 0.02
+0.58 ± 0.03
+0.62 ± 0.01
+0.49 ± 0.01
+0.63 ± 0.03
+0.50 ± 0.00
+0.72 ± 0.03
+0.65 ± 0.06
+0.60 ± 0.05
+0.61 ± 0.03
+
+0.61 ± 0.02
+0.51 ± 0.07
+0.62 ± 0.01
+0.35 ± 0.03
+0.62 ± 0.04
+0.34 ± 0.02
+0.72 ± 0.03
+0.64 ± 0.06
+0.59 ± 0.05
+0.61 ± 0.03
+
+-
+
+gemini-2.0-flash
+gemini-2.5-flash
+gpt-4o
+gpt-4.1
+o3-mini
+o4-mini
+gpt-oss
+qwen3
+phi4
+
+0.87
+0.83
+0.85
+0.87
+0.96
+0.94
+0.94
+0.91
+0.80
+
+0.87
+0.85
+0.89
+0.90
+0.96
+0.94
+0.96
+0.78
+0.58
+
+0.84
+0.82
+0.85
+0.87
+0.96
+0.94
+0.82
+0.93
+0.96
+
+0.85
+0.83
+0.86
+0.88
+0.96
+0.93
+0.88
+0.85
+0.72
+
+-
+
+0.51
+0.58
+0.53
+0.63
+0.79
+0.82
+0.87
+0.68
+0.56
+
+0.52
+0.66
+0.53
+0.63
+0.80
+0.83
+0.98
+0.66
+0.55
+
+0.52
+0.58
+0.53
+0.63
+0.79
+0.82
+0.75
+0.73
+0.65
+
+0.49
+0.53
+0.51
+0.63
+0.79
+0.82
+0.85
+0.69
+0.60
+
+-
+
+Analyzers
+
+Precision
+0.91
+0.95
+0.67
+0.84
+0.92
+0.93
+1.00
+0.71
+0.88
+0.90
+0.66
+
+Machine Learning
+
+Reentrancy Scenarios Dataset (RSD)
+
+Accuracy
+0.89
+0.88
+0.84
+0.86
+0.91
+0.83
+0.88
+0.76
+0.95
+0.81
+0.74
+
+LLMs
+
+Aggregated Benchmark
+Tool/Model
+Aderyn
+CCC
+Confuzzius
+Conkas
+Mythril
+Oyente+
+Sailfish
+Securify
+Sfuzz
+Slither
+Solhint
+Vandal
+
+B. RQ2: How consistent are the warnings and vulnerability
+reports produced by different tools when applied to the same
+contracts?
+Figure 1 shows two upset plots that illustrate how much
+different tools agree when reporting reentrancy vulnerabilities.
+Each plot can be read as follows: the horizontal bars on the
+left indicate how many contracts each tool flagged, while the
+filled dots below the plot identify which tools are included
+in each intersection. A vertical bar is then drawn above every
+connected group of dots, quantifying how many contracts were
+jointly marked as reentrant by that specific combination of
+tools. Thus, the dots define the tool combination and the height
+of the bar shows the size of the agreement.
+The plots reveal very limited agreement both in real-world
+scenarios (Aggregated Benchmark) and in MWEs (RSD). For
+the top plot, all tools agree on the lack of reentrancy over 252
+contracts, regardless of the ground truth. On the opposite side,
+though, if we consider the agreement among at least 6 tools,
+we count only 78 contracts out of 122 labeled as reentrant.
+For the RSD the agreement is a bit stronger, probably due to
+the reduced number of tools supporting Solidity v0.8 and the
+cardinality of the dataset. In particular, there is a similarity in
+the detection of Mythril, Confuzzius, Slither, and Aderyn (20
+contracts).
+These results suggest that automated tools tend to converge
+only when reentrancy cases are simple and well-defined,
+while more realistic implementations still lead to substantial
+disagreement across analyzers. For completeness, we report
+which categories of reentrant contracts in the RSD are most
+
+frequently misclassified by the four top-performing detectors:
+Aderyn
+Mythril
+Oyente+
+Slither
+
+Code
+00, 03, 04, 12, 14
+00, 01, 04, 09, 12, 13, 14, 15
+00, 01, 02, 03, 04, 07, 08, 09,
+13, 14, 15
+00, 09, 14, 15
+
+Variants
+Fold, Inline, Underflow, Mod
+Error, Mod, Fold, Staticcall
+Inline,
+Fold,
+Underflow,
+Unchecked, Emit, Mod, Staticcall
+Inline, Mod, Staticcall
+
+Oyente+ misses several cases due to unsupported post-0.8
+features, while Mythril and Slither overlook some baseline
+scenarios (code 00, see Table III and Section IV-B) depending
+on how CEI-breaking is interpreted (e.g., whether error and
+emit count as effects). Static calls are often deemed harmless,
+whereas our procedure labels them as exploitable via readonly reentrancy [50]. Aderyn, operating on source code, misses
+subtler patterns such as function folding and nested modifiers;
+cross-function cases with mutex-style guards (code 04) are
+also challenging. Delegatecalls (code 14) are not always conservatively treated as malicious. Overall, discrepancies persist
+due to divergent reentrancy interpretations and mismatches
+between published descriptions and actual implementations.
+C. RQ3: Do general-purpose Large Language Models (LLMs)
+demonstrate higher dependability and lower maintenance cost
+compared to static analysis and ML-based detectors?
+As shown in Table IV, LLMs achieve the best overall
+performance across both datasets. In the Aggregated Benchmark, o3-mini nearly reaches perfect accuracy, surpassing both
+the strongest static analyzer (Slither) and the top ML model
+(FFNN). In the RSD dataset, gpt-oss achieves the highest
+
+Intersection size
+
+Agreement Across Tools - Aggregated Benchmark
+
+252
+200
+100
+
+0
+21 Securify
+37
+Mythril
+41
+Sfuzz
+48
+Solhint
+55
+Sailfish
+78 Confuzzius
+87
+Ccc
+98
+Oyente+
+129
+Slither
+132
+Conkas
+100 0
+
+28 1 1 3 1 1 1 1 3 1 2 4 5 5 1 3 2 1 1 4 1 1 1 1 1 2 1 1 2 1 4 3 1 1 1 1 2 1 1 1 1 2 1 1 2 8 4 1 1 1 1 1 1 1 1 1 7 2 2 3 1 5 5 6 1 1 5 3 3 8 3
+
+Agreement Across Tools - RSD
+
+Intersection size
+
+20
+20 20
+15
+12
+9
+10
+7
+5
+5
+4
+4
+5
+3 3 3
+3 4 3 3 2 2 2
+2 1 2
+2 1 1 3
+2 3
+2 2 3 2
+1
+1
+1
+0
+23
+Ccc
+32 Oyente+
+34
+Solhint
+70
+Mythril
+75
+Confuzzius
+82
+Slither
+90
+Aderyn
+50 0
+
+Fig. 1: Comparison between upset plots for Aggregated Benchmark and RSD datasets. This type of plot serves as an alternative
+to Venn diagrams for visualizing intersections and overlaps among more than three sets. The histograms indicate the number
+of samples per row and column, while the dots show which tools flagged the contracts within each set.
+
+scores among all evaluated approaches, confirming that high
+accuracy is attainable even with fully local models.
+LLMs also provide stronger robustness: unlike static analyzers, they do not fail due to unsupported compiler versions or
+outdated vulnerability rules, resulting in zero reported errors
+in both datasets. This reliability stems from their ability to
+reason directly over source semantics rather than relying on
+hand-crafted bytecode patterns.
+Lastly, maintenance costs are negligible: improvements in
+foundation models generally improve detection performance
+without requiring rule updates or model retraining, although
+newer models may not outperform earlier ones in all cases.
+Notably, the commercial LLMs evaluated in this study (GPT4.1, GPT-4o, o4-mini) have already been superseded by the
+more capable GPT-5.1 family. Our results therefore represent
+a conservative lower bound on current LLM performance,
+further reinforcing the widening robustness gap relative to
+static analyzers.
+Overall, LLMs introduce a tradeoff between determinism
+and robustness: traditional analyzers provide reproducible rulebased reasoning but require continuous maintenance, whereas
+LLMs sacrifice strict determinism while remaining robust to
+language evolution and unseen attack patterns. As foundation
+models improve without manual updates, this tradeoff is likely
+to increasingly favor LLM-based approaches.
+D. RQ4: Can LLM-generated explanations assist human experts in identifying mislabeled or ambiguous cases, thus
+improving dataset quality?
+LLMs played a central role in validating the annotations of
+our two datasets. Traditional analysis tools often produce logs
+
+that are difficult to interpret, while LLMs return concise and
+readable explanations that identify the vulnerable function and
+the relevant code location. This clear communication is particularly important in security analysis, where human oversight is
+essential for trust. During our verification process, reviewing
+the explanations not only confirmed detection outcomes but
+also revealed multiple annotation issues.
+In particular, LLM-generated explanations allowed us to
+identify 9 contracts in the Aggregated dataset that were
+initially mislabeled due to subtle or ambiguous reentrancy
+behavior. By comparison, Slither detected only 3 mislabeled
+cases in the RSD dataset, and understanding its reasoning required significantly more time than analyzing the explanations
+provided by o3-mini. This demonstrates the practical value of
+LLMs in iterative dataset improvement and supports their use
+as complementary tools for security auditing.
+After dataset construction, the three authors evaluated the
+goodness of the explanation for contracts misclassified by
+o3-mini. Given the complexity and the large number of explanations to evaluate (more than 560 000, considering all models
+and all contracts), we used an LLM-as-a-judge approach for
+the rest of the responses.
+Metric
+Correctness
+Informativeness
+Pertinence
+
+Human Evaluation
+(Misclassified)
+4.38 ± 0.94
+4.14 ± 0.70
+4.37 ± 0.87
+
+LLM Evaluation
+(Full Set)
+4.46 ± 0.91
+3.32 ± 0.81
+4.81 ± 0.57
+
+Human reviewers scored explanations based on the correctness
+of the explanation, if it was informative enough to understand
+why a contract was reentrant or not, and if the answer was
+
+pertinent to reentrancy, showing generally positive results.
+The automatic evaluation, conducted over the entire dataset,
+confirmed similar correctness and even higher pertinence,
+though informativeness was scored lower, possibly due to more
+demanding expectations regarding depth or novelty. Qualitative feedback indicates that the most effective explanations
+pointed to specific functions or critical state changes within
+the code, while a minority of explanations lacked useful detail.
+Overall, these observations show that LLMs offer more
+helpful and actionable insights than current static analyzers
+and can support human experts in verifying challenging examples. Their involvement leads to improved dataset reliability
+and contributes to more effective benchmarking in smart
+contract security.
+VII. T HREATS TO VALIDITY
+Internal validity. Manual relabeling may still contain residual errors, despite three-reviewer consensus and LLM-assisted
+cross-checks. However, our results show a systematic lack
+of agreement among tools themselves (Table IV, Figure 1),
+including clear-cut cases. These divergences persist even if
+annotation noise is assumed, indicating that detector inconsistencies stem primarily from tool heuristics rather than
+ground truth quality. Execution outcomes also depend on the
+SmartBugs framework 2.0.15 used to run most tools, and on
+legacy compiler support when analyzing modern Solidity code.
+We mitigated instability by executing tools in a controlled
+environment and repeating failing runs, but partial outputs may
+still influence individual results.
+Additionally, using LLMs to assist humans in the manual labeling process may introduce subtle confirmation or anchoring
+biases, potentially influencing how borderline or ambiguous
+cases are interpreted. If the labeling process is partially shaped
+by model-generated explanations or suggestions, this could
+inadvertently align the ground truth with patterns more easily
+recognized by similar models. Such an effect may partly
+explain why o3-mini achieves particularly high performance
+in our evaluation.
+External validity. The Aggregated Benchmark includes
+real-world contracts but is not statistically representative of
+the entire Ethereum ecosystem, while the RSD intentionally focuses on semantic stress tests rather than prevalence.
+Thus, our findings should not be interpreted as estimates
+of ecosystem-wide vulnerability rates; rather, they provide
+evidence of reliability and robustness gaps in current detection
+tools. Broader studies will be needed to assess how these
+conclusions extend across more diverse contract populations
+and execution environments.
+VIII. R ELATED W ORK
+Empirical evaluations of smart contract analyzers commonly rely on manually labeled datasets spanning multiple
+vulnerability classes. Frameworks such as SmartBugs [33] and
+subsequent curated benchmarks evaluate static and dynamic
+analyzers using heterogeneous vulnerability corpora, while
+recent studies provide large manually annotated datasets with
+
+line-level labels for several vulnerability types [51]. Although
+these efforts improve benchmarking reproducibility, reentrancy
+represents only one category among many, resulting in limited
+semantic coverage of this specific vulnerability, especially
+when vulnerabilities are injected [36, 18].
+A second line of work focuses explicitly on reentrancy
+detection. Prior studies and tools analyze reentrancy patterns
+or propose specialized detection techniques [67, 35, 63].
+However, these works typically consider a restricted set of
+analyzers and do not explicitly characterize dependability
+under language evolution, i.e. whether detectors remain functional and reliable on modern Solidity (0.8+), where syntax
+and semantics have substantially changed. Moreover, existing
+reentrancy-focused benchmarks do not combine minimal working examples designed as controlled stress tests that isolate
+specific semantic corner cases (e.g., delegatecall, staticcall,
+proxies, folded calls) with a fine-grained taxonomy that goes
+beyond the traditional macroscopic categories (single-function,
+cross-function, cross-contract etc.), making it difficult to attribute failures to precise reentrancy mechanisms rather than
+to incidental contract complexity.
+More recently, several works have explored the use of
+large language models for smart contract vulnerability detection [20, 24, 61, 53]. These studies demonstrate promising capabilities of LLMs but evaluate multiple vulnerability classes
+simultaneously, without conducting a dedicated analysis of
+reentrancy semantics or robustness across evolving language
+features.
+In contrast, the present work concentrates exclusively on
+reentrancy and provides a unified dependability evaluation
+across static analyzers, ML-based approaches, and modern
+LLMs, grounded in two manually verified datasets designed to
+capture both real-world contracts and semantically challenging
+reentrancy scenarios.
+IX. C ONCLUSION
+This work revisits the state of reentrancy detection from a
+dependability perspective. We introduce two manually verified
+datasets: the Aggregated Benchmark, built from three prior
+human-labeled corpora, and the Reentrancy Scenarios Dataset
+(RSD), a stress-testing suite covering modern Solidity features
+and semantic corner cases. Using these datasets, we evaluate
+12 traditional tools, 10 ML/DL models, and 9 LLMs.
+Our findings expose a fractured and unreliable ecosystem.
+Despite strong F1 scores for detectors such as Oyente+ (83%)
+and Slither (92%), the remaining tools perform extremely
+poorly, often failing with errors or producing no meaningful
+output. More concerning is the lack of consistency: on the
+Aggregated Benchmark, only 38 out of 122 reentrant contracts
+exhibit agreement among at least 6 tools, meaning that even
+a minimal majority consensus is reached for barely one third
+of the cases. On the RSD, many tools fail outright due to
+outdated compiler support or simplistic syntactic heuristics. In
+contrast, multiple LLMs achieve above 85% accuracy in zeroshot settings, outperforming all conventional detectors while
+
+requiring no maintenance. Their explanations also helped identify mislabeled cases, directly improving dataset reliability.
+These results indicate a fundamental shift: as Solidity
+evolves, static tools are no longer dependable ground truth for
+security pipelines, while LLMs already provide more robust
+and semantically grounded analysis. Still, several challenges
+remain. Our datasets, though carefully curated, cover a limited
+fraction of deployed contract diversity. Scaling human-in-theloop validation of LLM explanations and investigating more
+advanced prompting or fine-tuning strategies represent promising directions. Moreover, hybrid approaches that combine the
+formal guarantees of static analysis with the adaptability of
+LLMs may offer the best path toward dependable vulnerability
+detection in rapidly evolving smart contract ecosystems.
+DATA AVAILABILITY S TATEMENT
+The data analyzed and discussed in this paper are openly
+available in a repository together with the supplementary
+material. The link to the repository is provided in anonymized
+form for the review process: https://anonymous.4open.science/
+r/reentrancy-detection-benchmarks-A1D7.
+R EFERENCES
+[1] ERC
+20
+OpenZeppelin
+Docs
+—
+docs.openzeppelin.com.
+https://docs.openzeppelin.
+com/contracts/2.x/api/token/erc20.
+[Accessed 30-052025].
+[2] GitHub - christoftorres/confuzzius at v0.0.2 —
+github.com.
+https://github.com/christoftorres/
+ConFuzzius. Accessed November 2025.
+[3] GitHub - ConsenSysDiligence/mythril at –v0.24.8 github.com.
+https://github.com/ConsenSysDiligence/
+mythril. Accessed November 2025.
+[4] GitHub - ConsenSysDiligence/mythril: Mythril is a
+symbolic-execution-based securty analysis tool for
+EVM bytecode. It detects security vulnerabilities in
+smart contracts built for Ethereum and other EVMcompatible blockchains. — github.com. https://github.
+com/ConsenSysDiligence/mythril.
+[Accessed 30-052025].
+[5] GitHub - crytic/slither at v0.11.3 — github.com. https:
+//github.com/crytic/slither. Accessed November 2025.
+[6] GitHub - cyfrin/aderyn at #f4ce952 — github.com. https:
+//github.com/Cyfrin/aderyn. Accessed November 2025.
+[7] GitHub - duytai/sfuzz at #ce87440 — github.com. https:
+//github.com/duytai/sFuzz. Accessed November 2025.
+[8] GitHub - eth-sri/securify at #51ba124 — github.com.
+https://github.com/eth-sri/securify. Accessed November
+2025.
+[9] GitHub - eth-sri/securify2 at #1913dfe — github.com.
+https://github.com/ethsri/securify2. Accessed November
+2025.
+[10] GitHub
+fraunhofer-aisec/cpg-contract-checker
+at #4ff0493 — github.com.
+https://github.com/
+Fraunhofer-AISEC/cpg-contract-checker.
+Accessed
+November 2025.
+
+[11] GitHub - nescio007/teether at #04adf56 — github.com.
+https://github.com/nescio007/teether. Accessed November 2025.
+[12] GitHub - protofire/solhint at v6.0.0 — github.com. https:
+//github.com/protofire/solhint. Accessed November 2025.
+[13] GitHub - smartbugs/conkas at #4e0f256 — github.com.
+https://github.com/smartbugs/conkas. Accessed November 2025.
+[14] GitHub - smartbugs/conkas: Ethereum Virtual Machine
+(EVM) Bytecode or Solidity Smart Contract static analysis tool based on symbolic execution — github.com.
+https://github.com/smartbugs/conkas. [Accessed 30-052025].
+[15] GitHub - smartbugs/oyente-plus at v1.0.0 — github.com.
+Accessed
+https://github.com/smartbugs/oyente plus.
+November 2025.
+[16] GitHub - trailofbits/manticore at v0.3.7 — github.com.
+https://github.com/trailofbits/manticore.
+Accessed
+November 2025.
+[17] GitHub - usyd-blockchain/vandal at #d2b0043 —
+github.com. https://github.com/usyd-blockchain/vandal.
+Accessed November 2025.
+[18] GitHub - xf97/HuangGai at v1.0.0 — github.com. https:
+//github.com/xf97/HuangGai/tree/v1.0.0. [Accessed 2905-2025].
+[19] Nicola Atzei, Massimo Bartoletti, and Tiziana Cimoli. A
+survey of attacks on ethereum smart contracts (SoK). In
+Principles of Security and Trust (POST), volume 10204
+of LNCS, pages 164–186. Springer, 2017.
+[20] Biagio Boi, Christian Esposito, and Sokjoon Lee. Smart
+contract vulnerability detection: The role of large language model (llm). ACM SIGAPP applied computing
+review, 24(2):19–29, 2024.
+[21] Priyanka Bose, Dipanjan Das, Yanju Chen, Yu Feng,
+Christopher Kruegel, and Giovanni Vigna. Sailfish: Vetting smart contract state-inconsistency bugs in seconds.
+In Proceedings of the IEEE Symposium on Security
+and Privacy (IEEE S&P), page –. Cornell University,
+May 2021. arXiv preprint arXiv:2104.08638, accessed
+https://arxiv.org/abs/2104.08638.
+[22] Lexi Brent, Anton Jurisevic, Michael Kong, Eric Liu,
+François Gauthier, Vincent Gramoli, Ralph Holz, and
+Bernhard Scholz. Vandal: A scalable security analysis framework for smart contracts. arXiv preprint
+arXiv:1809.03981, 9 2018. Preprint; see project page
+for code and artifacts.
+[23] R. M. Burstall and John Darlington. A transformation
+system for developing recursive programs. Journal of
+the ACM, 24(1):44–67, 1 1977.
+[24] Chong Chen, Jianzhong Su, Jiachi Chen, Yanlin Wang,
+Tingting Bi, Jianxing Yu, Yanli Wang, Xingwei Lin, Ting
+Chen, and Zibin Zheng. When chatgpt meets smart
+contract vulnerability detection: How far are we? ACM
+Transactions on Software Engineering and Methodology,
+34(4):1–30, 2025.
+[25] Jiachi Chen, Xin Xia, David Lo, John Grundy, Xi-
+
+apu Luo, and Ting Chen. Defectchecker: Automated
+smart contract defect detection by analyzing evm bytecode. IEEE Transactions on Software Engineering,
+48(7):2189–2207, 7 2022.
+[26] Jaeseung Choi, Doyeon Kim, Soomin Kim, Gustavo
+Grieco, Alex Groce, and Sang Kil Cha. Smartian: Enhancing smart contract fuzzing with static and dynamic
+data-flow analyses. In 2021 36th IEEE/ACM International Conference on Automated Software Engineering
+(ASE), pages 227–239. IEEE, 2021.
+[27] Monika di Angelo, Thomas Durieux, João F. Ferreira,
+and Gernot Salzer. SmartBugs 2.0: An execution framework for weakness detection in ethereum smart contracts.
+In 38th IEEE/ACM International Conference on Automated Software Engineering (ASE), pages 2102–2105.
+IEEE Computer Society, 9 2023.
+[28] Monika Di Angelo and Gernot Salzer. Consolidation
+of Ground Truth Sets for Weakness Detection in Smart
+Contracts, volume 13953, pages 439–455. Springer
+Science+Business Media, 12 2023.
+[29] Hao Ding, Yizhou Liu, Xuefeng Piao, Huihui Song, and
+Zhenzhou Ji. Smartguard: An llm-enhanced framework
+for smart contract vulnerability detection. Expert Systems
+with Applications, 269:126479, 2025.
+[30] Thomas Durieux, João F. Ferreira, Rui Abreu, and Pedro
+Cruz. Empirical review of automated analysis tools on
+47,587 Ethereum smart contracts. In Gregg Rothermel and Doo-Hwan Bae, editors, Proceedings of the
+ACM/IEEE 42nd International conference on software
+engineering, pages 530–541. ACM, 6 2020.
+[31] Rainer Feichtinger, Robin Fritsch, Lioba Heimbach,
+Yann Vonlanthen, and Roger Wattenhofer. Sok: Attacks
+on daos. arXiv preprint arXiv:2406.15071, 2024.
+[32] Josselin Feist, Gustavo Grieco, and Alex Groce. Slither:
+a static analysis framework for smart contracts. In 2019
+IEEE/ACM 2nd International Workshop on Emerging
+Trends in Software Engineering for Blockchain (WETSEB), pages 8–15. IEEE, IEEE / ACM, 5 2019.
+[33] João F Ferreira, Pedro Cruz, Thomas Durieux, and Rui
+Abreu. Smartbugs: A framework to analyze solidity
+smart contracts. In Proceedings of the 35th IEEE/ACM
+international conference on automated software engineering, pages 1349–1352. Cornell University, 7 2020.
+[34] Christof Ferreira Torres, Mathis Baden, Robert Norvill,
+Beltran Borja Fiz Pontiveros, Hugo Jonker, and Sjouke
+Mauw. Ægis: Shielding vulnerable smart contracts
+against attacks. In Proceedings of the 15th ACM Asia
+Conference on Computer and Communications Security,
+pages 584–597, 2020.
+[35] Jun Gao, Yu Fu, Zhi Chen, Defang Ye, Peng Qian,
+and Kun Sun. Silence false alarms: Identifying antireentrancy patterns on Ethereum to refine smart contract
+reentrancy detection. In Proceedings of the Network and
+Distributed System Security Symposium (NDSS), 2025.
+[36] Asem Ghaleb and Karthik Pattabiraman. How effective
+are smart contract analysis tools? evaluating smart con-
+
+tract static analysis tools using bug injection. In Sarfraz
+Khurshid and Corina S. Pasareanu, editors, Proceedings
+of the 29th ACM SIGSOFT international symposium on
+software testing and analysis, pages 415–427. ACM, 7
+2020.
+[37] Sukrit Kalra, Seep Goel, Mohan Dhawan, and Subodh
+Sharma. Zeus: analyzing safety of smart contracts. In
+Ndss, pages 1–12, 2018.
+[38] Johannes Krupp and Christian Rossow. teether: Gnawing
+at ethereum to automatically exploit smart contracts. In
+William Enck and Adrienne Porter Felt, editors, 27th
+USENIX Security Symposium (USENIX Security ’18),
+pages 1317–1333, Baltimore, MD, USA, August 2018.
+USENIX Association.
+[39] Yuqi Liu, Rui Xi, and Karthik Pattabiraman. Reentrancy
+redux: The evolution of real-world reentrancy attacks on
+blockchains. In 2025 55th Annual IEEE/IFIP International Conference on Dependable Systems and Networks
+(DSN), pages 576–588. IEEE, 2025.
+[40] Loi Luu, Duc-Hiep Chu, Hrishi Olickel, Prateek Saxena,
+and Aquinas Hobor. Making smart contracts smarter.
+In Edgar R. Weippl, Stefan Katzenbeisser, Christopher
+Kruegel, Andrew C. Myers, and Shai Halevi, editors,
+Proceedings of the 2016 ACM SIGSAC conference on
+computer and communications security, pages 254–269.
+ACM, 10 2016.
+[41] Loi Luu, Duc-Hiep Chu, Hrishi Olickel, Prateek Saxena,
+and Aquinas Hobor. Making smart contracts smarter.
+In Edgar R. Weippl, Stefan Katzenbeisser, Christopher
+Kruegel, Andrew C. Myers, and Shai Halevi, editors,
+Proceedings of the ACM SIGSAC Conference on Computer and Communications Security (CCS), pages 254–
+269. ACM, 10 2016.
+[42] Deepak Kumar Mishra and Pawan Singh Mehra. Totalsol: A multi-layer static analysis method for vulnerability
+detection in ethereum based smart contracts. In 2025
+International Conference on Cognitive Computing in
+Engineering, Communications, Sciences and Biomedical
+Health Informatics (IC3ECSBHI), pages 945–950. IEEE,
+1 2025.
+[43] Mark Mossberg, Felipe Manzano, Eric Hennenfent, Alex
+Groce, Gustavo Grieco, Josselin Feist, Trent Brunson,
+and Artem Dinaburg. Manticore: A user-friendly symbolic execution framework for binaries and smart contracts, 11 2019.
+[44] Tai D Nguyen, Long H Pham, Jun Sun, Yun Lin, and
+Quang Tran Minh. sfuzz: An efficient adaptive fuzzer
+for solidity smart contracts. In Gregg Rothermel and
+Doo-Hwan Bae, editors, Proceedings of the ACM/IEEE
+42nd International Conference on Software Engineering,
+volume abs/2004.08563, pages 778–788. Cornell University, 4 2020.
+[45] Shuyin Ouyang, Jie M Zhang, Mark Harman, and Meng
+Wang. An empirical study of the non-determinism of
+chatgpt in code generation. ACM Transactions on Software Engineering and Methodology, 34(2):1–28, 2025.
+
+[46] Helmuth Partsch and Ralf Steinbrüggen. Program transformation systems. ACM Computing Surveys (CSUR),
+15(3):199–236, 9 1983.
+[47] Daniel Perez and Benjamin Livshits. Smart contract
+vulnerabilities: Vulnerable does not imply exploited. In
+Michael Bailey and Rachel Greenstadt, editors, 30th
+USENIX Security Symposium (USENIX Security 21),
+pages 1325–1341. USENIX Association, 2021.
+[48] Dalila Ressi, Alvise Spanò, Lorenzo Benetollo, Carla
+Piazza, Michele Bugliesi, and Sabina Rossi. Vulnerability detection in ethereum smart contracts via machine learning: A qualitative analysis. arXiv preprint
+arXiv:2407.18639, abs/2407.18639, 7 2024.
+[49] Michael Rodler, Wenting Li, Ghassan O. Karame, and
+Lucas Davi. Sereum: Protecting existing smart contracts against re-entrancy attacks. In Proceedings of
+the Network and Distributed System Security Symposium
+(NDSS). Internet Society, 2019. Runtime defense and
+taxonomy of advanced re-entrancy patterns; shows attacks beyond the DAO archetype, including those using
+method calls.
+[50] Ioannis Sachinoglou. Read-only reentrancy. ChainSecurity presentation/pdf, 2023. “A novel attack class
+responsible for $100M+ funds at risk”.
+[51] Francesco Salzano, Cosmo Kevin Antenucci, Simone
+Scalabrino, Giovanni Rosa, Rocco Oliveto, and Remo
+Pareschi. An empirical analysis of vulnerability detection tools for solidity smart contracts using line
+level manually annotated vulnerabilities. arXiv preprint
+arXiv:2505.15756, 2025.
+[52] Clara Schneidewind, Ilya Grishchenko, Markus Scherer,
+and Matteo Maffei. ethor: Practical and provably sound
+static analysis of ethereum smart contracts. In Jay Ligatti,
+Xinming Ou, Jonathan Katz, and Giovanni Vigna, editors, Proceedings of the 2020 ACM SIGSAC Conference
+on Computer and Communications Security, pages 621–
+640. ACM, 10 2020.
+[53] Yuqiang Sun, Daoyuan Wu, Yue Xue, Han Liu, Haijun
+Wang, Zhengzi Xu, Xiaofei Xie, and Yang Liu. Gptscan:
+Detecting logic vulnerabilities in smart contracts by combining gpt with program analysis. In Proceedings of the
+IEEE/ACM 46th International Conference on Software
+Engineering, pages 1–13, 2024.
+[54] Sergey Tikhomirov, Sergey Tikhomirov, and Alexey
+Frolov. Smartcheck: Static analysis of solidity smart
+contracts. In arXiv preprint arXiv:1807.03325, 2018.
+[55] Christof Ferreira Torres, Antonio Ken Iannillo, Arthur
+Gervais, and Radu State.
+Confuzzius: A data
+dependency-aware hybrid fuzzer for smart contracts. In
+2021 IEEE European Symposium on Security and Privacy (EuroS&P), pages 103–119. IEEE, IEEE, 9 2021.
+[56] Petar Tsankov, Andrei Dan, Dana Drachsler-Cohen,
+Arthur Gervais, Florian Buenzli, and Martin Vechev.
+Securify: Practical security analysis of smart contracts.
+In David Lie, Mohammad Mannan, Michael Backes, and
+Xiaofeng Wang, editors, Proceedings of the 2018 ACM
+
+SIGSAC conference on computer and communications
+security, volume abs/1806.01143, pages 67–82. Cornell
+University, 6 2018.
+[57] Valentin F Turchin. The concept of a supercompiler.
+ACM Transactions on Programming Languages and Systems (TOPLAS), 8(3):292–325, 6 1986.
+[58] Nuno Veloso. Conkas: A modular and static analysis tool for ethereum smart contracts.
+In Master’s Thesis, Instituto Superior Tecnico, Universidade de Lisboa, 2023.
+Available as technical
+report via https://fenix.tecnico.ulisboa.pt/downloadFile/
+1689244997262417/94080-Nuno-Veloso resumo.pdf.
+[59] Shuai Wang, Chengyu Zhang, and Zhendong Su. Detecting nondeterministic payment bugs in ethereum smart
+contracts. Proc. ACM Program. Lang., 3(OOPSLA):1–
+29, October 2019.
+[60] Wei Wang, Jingjing Song, Guangquan Xu, Yidong Li,
+Hao Wang, and Chunhua Su. Contractward: Automated
+vulnerability detection models for ethereum smart contracts. IEEE Transactions on Network Science and
+Engineering, 8(2):1133–1144, 1 2020.
+[61] Zhiyuan Wei, Jing Sun, Yuqiang Sun, Ye Liu, Daoyuan
+Wu, Zijian Zhang, Xianhao Zhang, Meng Li, Yang Liu,
+Chunmiao Li, et al. Advanced smart contract vulnerability detection via llm-powered multi-agent systems. IEEE
+Transactions on Software Engineering, 2025.
+[62] Konrad Weiss, Christof Ferreira Torres, and Florian
+Wendland. Analyzing the impact of copying-and-pasting
+vulnerable solidity code snippets from question-andanswer websites. arXiv preprint arXiv:2409.07586, pages
+713–730, 11 2024. Preprint; contains links to tools CCC
+and CCD.
+[63] Yin Wu, Xiaofei Xie, Chenyang Peng, Dijun Liu, Hao
+Wu, Ming Fan, Ting Liu, and Haijun Wang. Advscanner: Generating adversarial smart contracts to exploit
+reentrancy vulnerabilities using llm and static analysis.
+In Proceedings of the 39th IEEE/ACM International
+Conference on Automated Software Engineering, pages
+1019–1031, 2024.
+[64] Shuo Yang, Jiachi Chen, Mingyuan Huang, Zibin Zheng,
+and Yuan Huang. Uncover the premeditated attacks: Detecting exploitable reentrancy vulnerabilities by identifying attacker contracts. In Proceedings of the IEEE/ACM
+46th International Conference on Software Engineering,
+pages 1–12. ACM, 4 2024.
+[65] Jingwen Zhang, Zibin Zheng, Yuhong Nan, Mingxi Ye,
+Kaiwen Ning, Yu Zhang, and Weizhe Zhang. Smartreco:
+Detecting read-only reentrancy via fine-grained crossdapp analysis. arXiv preprint arXiv:2409.18468, pages
+2138–2150, 9 2024.
+[66] Mengya Zhang, Xiaokuan Zhang, Yinqian Zhang, and
+Zhiqiang Lin. TXSPECTOR: Uncovering attacks in
+ethereum from transactions. In 29th USENIX Security
+Symposium (USENIX Security 20), pages 2775–2792.
+USENIX Association, August 2020.
+[67] Zibin Zheng, Neng Zhang, Jianzhong Su, Zhijie Zhong,
+
+Mingxi Ye, and Jiachi Chen. Turn the rudder: A beacon
+of reentrancy detection for smart contracts on ethereum.
+In Proceedings of the 45th International Conference on
+Software Engineering, ICSE ’23, page 295–306. IEEE
+Press, 5 2023.
+
+

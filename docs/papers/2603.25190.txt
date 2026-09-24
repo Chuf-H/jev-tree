@@ -1,0 +1,2973 @@
+zk-X509: Privacy-Preserving On-Chain Identity
+from Legacy PKI via Zero-Knowledge Proofs
+
+arXiv:2603.25190v2 [cs.CR] 31 Mar 2026
+
+Yeongju Bak
+Tokamak Network
+zena@tokamak.network
+March 31, 2026
+arXiv preprint — v2
+Abstract
+Public blockchains impose an inherent tension between regulatory compliance and user
+privacy. Existing on-chain identity solutions require either centralized KYC attestors—
+introducing single points of failure and metadata leakage—specialized hardware such as NFC
+readers or biometric scanners, or Decentralized Identifier (DID) frameworks that necessitate
+building entirely new credential issuance infrastructure. Meanwhile, over four billion active
+X.509 digital certificates (estimated from Certificate Transparency logs and TLS survey
+data) constitute a globally deployed, government-grade trust infrastructure that remains
+unexploited for decentralized identity.
+This paper presents zk-X509, a software-based, privacy-preserving identity system that
+bridges legacy Public Key Infrastructure (PKI) with public ledgers via a RISC-V-based zeroknowledge virtual machine (zkVM). The system enables users to prove ownership and validity of standard X.509 certificates—issued by any national PKI or corporate CA—without
+revealing private keys or personal identifiers. A key architectural distinction is that the private key never enters the ZK circuit; ownership is instead proven via signature verification
+delegated to the OS keychain (macOS Security.framework, Windows CNG). The circuit performs six verification checks: (1) full certificate chain validity to a trusted root, (2) temporal
+validity, (3) signature-based key ownership, (4) trustless CRL revocation checking with CA
+signature verification inside the zkVM, (5) binding to a specific blockchain address, and (6)
+configurable nullifier generation for Sybil resistance. Thirteen public values are committed,
+including a nullifier, a CA Merkle root that hides the issuing CA’s identity, the certificate’s
+expiry timestamp, and four optional selective disclosure hashes. On-chain verification status
+automatically lapses upon certificate expiry.
+We formalize the security model under a Dolev-Yao adversary and establish eight properties via game-based definitions: unforgeability, unlinkability, cross-service unlinkability,
+cross-chain replay resistance, double-registration resistance, front-running immunity, CAmembership hiding, and non-transferability, with explicit reductions to sEUF-CMA signature security, SHA-256 modeled as a random oracle, and ZK soundness. The SP1 zkVM
+implementation achieves 11.8 million cycles for single-level ECDSA P-256 verification (17.4M
+for RSA-2048), with on-chain verification costing approximately 300,000 gas under Groth16.
+By leveraging certificates already deployed at scale across multiple jurisdictions, zk-X509
+enables adoption without new trust establishment, providing a complementary approach to
+DID-based systems for integrating existing trust anchors into decentralized applications.
+
+Keywords: Zero-Knowledge Proofs, X.509, PKI, Digital Identity, zkVM, Blockchain, PrivacyPreserving Authentication, Proof of Personhood
+
+1
+
+1
+
+Introduction
+
+1.1
+
+Motivation
+
+Digital identity verification on blockchain platforms faces a fundamental tension between transparency and privacy. Public blockchains provide immutable, auditable records, yet this same
+transparency renders them unsuitable for storing personal identity data such as names, national
+IDs, or certificate contents. Recent regulatory actions—including OFAC sanctions on privacypreserving protocols [31]—have intensified the demand for decentralized “Proof of Personhood”
+(PoP) systems that satisfy compliance requirements without sacrificing user anonymity.
+Existing approaches to on-chain identity fall into four categories, each with significant limitations:
+1. Centralized attestation. A trusted third party (e.g., KYC provider) verifies identity
+off-chain and issues an on-chain attestation. This centralizes trust, introduces a single
+point of failure, and leaks metadata revealing that a particular address was verified by a
+specific provider.
+2. Hardware-dependent verification. Systems such as zkPassport [33] require NFC readers to access passport chips, while Worldcoin [29] depends on purpose-built biometric
+scanners (the Orb). These approaches limit accessibility to users with specific hardware.
+3. Direct credential submission. Users submit identity documents to smart contracts
+or oracles, permanently recording personal data on an immutable ledger—a fundamental
+privacy violation.
+4. Decentralized Identifiers (DIDs). W3C DID-based systems such as Polygon ID and
+Veramo require building entirely new credential issuance infrastructure—new issuers, new
+trust registries, and new verification workflows. While architecturally promising, DIDs
+face a cold-start problem: they cannot leverage the billions of credentials already issued
+by governments and CAs, and regulatory acceptance remains uncertain. Deployment
+timelines of 3–5 years for ecosystem bootstrapping limit their near-term applicability to
+compliance-sensitive domains.
+None of these approaches simultaneously achieves verifiability (anyone can check that an
+address is backed by a valid credential), privacy (no personal data is revealed), decentralization (no single entity can forge or revoke attestations), accessibility (no specialized hardware
+required), and immediate deployability (no new issuance infrastructure needed).
+
+1.2
+
+Key Insight
+
+The dominant paradigm in blockchain identity research—Decentralized Identifiers (DIDs)—
+attempts to build new trust systems from scratch. We argue for an orthogonal approach:
+bridging existing trust to the blockchain.
+A vast, government-grade trust infrastructure already exists: the X.509 Public Key Infrastructure. Over 4 billion X.509 certificates are active globally, issued by Certificate Authorities (CAs)
+for purposes ranging from TLS to national identity. In Korea alone, approximately 20 million
+NPKI certificates are actively used for banking, government services, and e-commerce—each
+carrying legal weight under the Electronic Signatures Act [21]. These certificates embed RSA
+or ECDSA signatures from trusted CAs, providing a cryptographic chain of trust that can be
+verified computationally—and therefore inside a zero-knowledge circuit. The core insight of
+zk-X509 is that these existing credentials, already trusted by governments and institutions, can
+serve as blockchain identity anchors today, without waiting years for new DID ecosystems to
+mature.
+2
+
+1.3
+
+Proposed Solution
+
+zk-X509 resolves the transparency-privacy tension by verifying X.509 certificate ownership entirely inside a zkVM. The system proves the following properties without revealing any certificate
+contents:
+1. Certificate Chain Validity. The full chain from user certificate through intermediate
+CAs to a trusted root CA is verified, with each link’s RSA or ECDSA signature checked
+cryptographically.
+2. Temporal Validity. Every certificate in the chain is checked against the proof generation
+timestamp.
+3. Private Key Ownership. The user proves possession of the private key corresponding
+to the certificate’s public key.
+4. Revocation Status. The CRL is parsed and its CA signature verified inside the zkVM,
+then the user’s serial number is checked against the revoked list—providing trustless revocation checking.
+5. Registrant Binding. The proof is cryptographically bound to the user’s blockchain
+address, preventing proof theft via front-running.
+6. Nullifier Generation. A deterministic, privacy-preserving identifier is derived from the
+certificate for Sybil resistance.
+Thirteen values are revealed publicly: a nullifier, a CA Merkle root (proving membership in
+the whitelisted CA set without revealing which CA), a timestamp, the registrant address,
+a wallet index, the certificate’s expiry time (notAfter), a chain ID (EIP-155 [8]), a registry address (cross-DApp unlinkability), a CRL Merkle root, and four optional selective
+disclosure hashes (country, organization, organizational unit, common name). These are
+committed as public outputs and verified on-chain by a Solidity smart contract.
+
+1.4
+
+Global Applicability and Primary Target
+
+zk-X509 is designed to work with any X.509 certificate from any CA worldwide.
+The smart contract maintains a configurable whitelist of trusted CA root hashes, enabling
+deployment-specific trust policies: a Korean DeFi protocol may whitelist only Korean NPKI
+CAs, while a global DAO may whitelist government CAs from multiple nations simultaneously.
+Primary validation target: Korean NPKI. Our implementation is validated against the
+Korean National Public Key Infrastructure (NPKI) as a concrete case study. Korean digital
+certificates (Accredited Certificate) are issued by authorized CAs such as the Korea Financial
+Telecommunications and Clearings Institute (KFTC), employing a 3-level certificate chain (Root
+CA → Intermediate CA → User Certificate) with RSA-2048 and SHA-256 or SHA-1 signatures.
+Certificates and private keys are imported into the OS keychain, where the prover application
+delegates signing to the platform keychain API (macOS Security.framework, Windows CNG)
+without direct access to the private key material.
+Multi-national deployment. The architecture supports simultaneous whitelisting of CAs
+from multiple jurisdictions. For example, a single IdentityRegistry deployment could accept
+certificates from Korean NPKI (∼20M users), Estonian eID (∼1.3M e-residents), German eID
+— all operating under the eIDAS regulation [13] — and corporate PKI systems—each user
+proving identity under their national CA without any cross-border credential issuance. The
+caMerkleRoot in the public values attests that the certificate was issued by one of the whitelisted
+CAs without revealing which one, preserving jurisdictional privacy. Applications requiring
+jurisdiction-specific logic can request the user to additionally disclose countryHash via selective
+disclosure (Section 3.11).
+
+3
+
+1.5
+
+Contributions
+
+This paper makes the following contributions:
+• A system architecture for a complete ZK-based X.509 verification pipeline supporting full certificate chain verification (RSA and ECDSA), trustless CRL checking,
+signature-based ownership (private key never enters zkVM), registrant binding, configurable multi-wallet registration, automatic identity expiry, selective attribute disclosure,
+CA-anonymous verification via Merkle tree, and self-service wallet migration.
+• A working implementation using the SP1 zkVM for zero-knowledge computation, with
+Solidity smart contracts for on-chain verification, on-chain CA list management with autocomputed Merkle roots, CRL Merkle root validation, configurable maxWalletsPerCert
+policy, chain ID and registry address binding, selective disclosure via bitmask, OS keychain
+integration, and a web-based frontend with NPKI auto-discovery.
+• A formal security analysis with game-based definitions under the Dolev-Yao adversary model, establishing eight properties — unforgeability, unlinkability, cross-service
+unlinkability, cross-chain replay resistance, double-registration resistance, front-running
+immunity, CA-membership hiding, and non-transferability — with explicit reductions to
+standard cryptographic assumptions (EUF-CMA, SHA-256 collision resistance, ZK soundness).
+• A performance evaluation demonstrating practical feasibility: ∼11.8M SP1 cycles for
+single-level ECDSA P-256 verification (∼17.4M for RSA-2048) and ∼300K gas for on-chain
+registration (Groth16).
+
+1.6
+
+Paper Organization
+
+Section 2 provides background on X.509, zkVMs, related work, and a detailed comparison with
+DID-based approaches. Section 3 presents the system architecture and formal protocol specification. Section 4 details the implementation. Section 5 formalizes the security analysis with
+game-based definitions. Section 6 compares with alternative approaches. Section 7 discusses
+limitations and future work. Section 8 concludes.
+
+2
+
+Background and Related Work
+
+2.1
+
+X.509 Certificates and Certificate Chains
+
+X.509 is the ITU-T standard for public key certificates, defined in RFC 5280 [11]. An X.509
+certificate binds a public key to an identity through a digital signature from a Certificate
+Authority. The certificate structure (ASN.1 DER encoding) contains:
+• TBSCertificate (To-Be-Signed): Subject name, issuer name, serial number, validity
+period, subject public key, and extensions.
+• SignatureAlgorithm: OID identifying the signature scheme (e.g., sha256WithRSAEncryption).
+• SignatureValue: The CA’s digital signature over the DER-encoded TBSCertificate.
+In practice, most PKI deployments use multi-level certificate chains. A user certificate is signed
+by an intermediate CA, which is in turn signed by a root CA. Verification requires traversing the
+entire chain, verifying each signature and validity period. Korean NPKI uses a 3-level hierarchy:
+KISA Root CA → Authorized CA (e.g., KFTC) → User Certificate.
+
+2.2
+
+Zero-Knowledge Proofs and zkVMs
+
+A zero-knowledge proof allows a prover to convince a verifier that a statement is true without
+revealing any information beyond the truth of the statement [16]. The random oracle model
+4
+
+[1] provides a standard framework for analyzing hash-based constructions in such proofs. Formally, a ZK proof system (𝑃 , 𝑉 ) for a language 𝐿 satisfies three properties: completeness
+(honest provers convince honest verifiers), soundness (no cheating prover can convince on false
+statements), and zero-knowledge (the verifier learns nothing beyond the statement’s truth).
+Modern zkVMs extend this to arbitrary computation: a prover executes a program inside a
+virtual machine and produces a succinct proof that the computation was performed correctly.
+The development of succinct non-interactive arguments of knowledge (SNARKs) [5] established
+the foundation for this approach, with subsequent systems such as Groth16 [18], PLONK [15],
+Bulletproofs [7], and STARKs [3] offering different trade-offs between proof size, verification
+time, and trusted setup requirements. Zerocash [4] demonstrated the practical application of
+SNARKs to privacy-preserving blockchain transactions.
+SP1 (Succinct Processor 1) is a RISC-V-based zkVM developed by Succinct [28], alongside
+alternatives such as RISC Zero [24]. It compiles standard Rust to RISC-V instructions executed
+inside the zkVM, enabling complex operations such as ASN.1 parsing and RSA verification. SP1
+provides precompiled accelerators for SHA-256 and RSA modular exponentiation, and supports
+on-chain verification via Groth16 [18] or PLONK [15] proof systems. Circuit-level DSLs such
+as Circom [2] offer an alternative approach but lack the general-purpose programmability of
+zkVMs.
+
+2.3
+
+RSA Verification in Zero-Knowledge
+
+RSA signature verification—the dominant operation in X.509 certificate validation—requires
+modular exponentiation with a 2048-bit modulus: computing 𝑠𝑒 mod 𝑛 where 𝑠 is the signature, 𝑒 is the public exponent, and 𝑛 is the modulus. Naive implementation in a ZK circuit is
+prohibitively expensive due to the cost of big-integer arithmetic. SP1 mitigates this through precompiled accelerators that implement modular arithmetic natively in the proof system, reducing
+the cycle count from tens of millions to approximately 5.5 million for RSA-2048.
+
+2.4
+
+Related Work
+
+We survey existing approaches to privacy-preserving on-chain identity and position zk-X509
+relative to them.
+zkPassport [33] generates ZK proofs of passport and national ID card data read via NFC. While
+similar in spirit to zk-X509, it requires NFC hardware and is limited to NFC-readable travel
+documents and eIDs. zk-X509 is purely software-based and works with any X.509 certificate.
+Worldcoin [29] uses iris biometric scanning with a purpose-built open-source device (the Orb)
+to generate unique identity proofs. The hardware dependency and biometric data collection
+raise accessibility concerns that zk-X509 avoids entirely.
+Polygon ID and DID-based systems [26, 27] use W3C Verifiable Credentials (VCs) with ZK
+proofs. While providing a flexible credential framework, DID systems face a fundamental bootstrapping problem: they require new credential issuers, trust registries, and verification schemas
+to be established before any identity verification can occur. This “build from scratch” approach
+contrasts sharply with zk-X509’s “bridge the existing” philosophy. Furthermore, DID revocation
+depends on issuer-maintained registries—a centralized dependency—whereas zk-X509 verifies
+CA-signed CRLs trustlessly inside the zkVM. Regulatory acceptance of DID credentials remains
+unresolved in most jurisdictions, while X.509 certificates carry established legal standing.
+Semaphore [19] enables anonymous group membership proofs but provides no mechanism for
+certificate-based identity verification. It solves a different problem: anonymous signaling within
+a pre-defined group.
+5
+
+zk-email [32] proves ownership of emails by verifying DKIM signatures in ZK. This is the
+closest analog to zk-X509 in approach (verifying existing cryptographic signatures in ZK), but
+is limited to email and does not provide the government-grade trust level of PKI certificates.
+Soulbound Tokens (SBTs) [22] propose non-transferable tokens as identity primitives. However, SBTs require a trusted issuer and provide no mechanism for privacy-preserving credential
+verification.
+Anonymous credential systems. The foundational work of Chaum [10] introduced the concept of privacy-preserving transactions, and Camenisch and Lysyanskaya [9] formalized anonymous credential schemes based on bilinear maps. These systems enable selective attribute
+disclosure but require purpose-built credential issuance — they cannot leverage existing X.509
+certificates. zk-X509 achieves comparable privacy properties by applying ZK proofs to credentials that already exist at scale.
+Proof of Personhood. Ford [14] and Borge et al. [6] formalized the concept of proof of
+personhood as a prerequisite for digital democracy. zk-X509 instantiates this concept using existing government-issued certificates rather than novel pseudonym party protocols or biometric
+approaches.
+System
+
+Credential
+
+Hardware
+
+Trust Model
+
+Existing Infra
+
+CRL
+
+Privacy
+
+zkPassport Passport/eID NFC
+[33]
+required
+Worldcoin Biometric
+Orb
+[29]
+required
+DID/VC W3C VC
+None
+[26]
+Semaphore Group key
+None
+[19]
+None
+zk-email Email
+DKIM
+[32]
+zkX.509 cert None
+X509
+
+Government
+CA
+World
+Foundation
+New issuers
+
+Yes
+(passports/eIDs)
+No
+
+N/A
+
+Full ZK
+
+N/A
+
+Partial
+
+No (must build)
+
+Group admin
+
+No
+
+Issuer- Varies
+dependent
+N/A
+Full ZK
+
+Email
+providers
+Government
+CAs
+
+Yes (DKIM)
+
+No
+
+Yes (billions)
+
+Trustless
+Full ZK
+ZK
+
+Full ZK
+
+zk-X509 is, to our knowledge, the first system to bring existing X.509 PKI certificates into the
+blockchain ecosystem using zero-knowledge proofs, combining government-grade trust with full
+certificate chain verification, revocation checking, full privacy, and no hardware requirements.
+
+2.5
+
+zk-X509 vs Decentralized Identifiers (DIDs)
+
+Decentralized Identifier (DID) frameworks [26, 27] represent the dominant paradigm in
+blockchain identity research. While architecturally elegant, DID-based systems differ fundamentally from zk-X509 in their trust assumptions and deployment requirements. We highlight
+the key distinctions:
+Infrastructure dependency. DID systems require bootstrapping entirely new infrastructure:
+credential issuers, trust registries, verification schemas, and holder wallets. In contrast, zk-X509
+leverages X.509 PKI—an infrastructure already deployed at global scale with over 4 billion
+active certificates. In Korea alone, approximately 20 million NPKI certificates are actively used,
+providing an immediate user base without any new issuance required.
+Trust model. DID trust is issuer-dependent: a verifier must decide which DID issuers to
+trust, creating a fragmented trust landscape. zk-X509 inherits the established CA trust model,
+6
+
+where governments have already designated trusted CAs through legal frameworks (e.g., Korea’s Electronic Signatures Act [21]). This eliminates the “who trusts whom?” bootstrapping
+problem.
+Revocation mechanism. DID revocation depends on the issuer maintaining and publishing revocation registries—a centralized dependency within a supposedly decentralized system.
+zk-X509 performs trustless CRL verification inside the zkVM: the CRL’s CA signature is cryptographically verified, ensuring revocation data cannot be forged or suppressed.
+Regulatory compliance. DID frameworks lack clear regulatory standing in most jurisdictions.
+X.509 certificates, particularly national PKI certificates, carry legal weight: Korean NPKI certificates are legally binding under the Electronic Signatures Act [21]. This makes zk-X509
+immediately applicable to compliance-sensitive domains (banking, government services) where
+DID acceptance remains unresolved.
+Time to deployment. DID ecosystems require 3–5 years for credential issuance, trust registry establishment, and ecosystem adoption. zk-X509 can be deployed within 3–6 months by
+whitelisting existing CA root hashes—no new credential issuance is needed.
+Criterion
+
+DID (e.g., Polygon ID, Veramo)
+
+zk-X509
+
+Existing
+infrastructure
+
+Not leveraged; new issuers required
+
+Trust model
+
+Issuer-dependent, fragmented
+
+Revocation
+
+Issuer-maintained registries
+
+Hardware
+requirement
+Regulatory
+compliance
+
+None
+
+Leverages
+billions of
+X.509 certs
+Government
+CAs, legally
+established
+Trustless CRL
+verification in
+zkVM
+None
+
+Time to
+deployment
+
+3–5 years (ecosystem bootstrap)
+
+Trust
+establishment cost
+
+High (new ecosystem)
+
+Privacy
+
+ZK proofs (varies by system)
+
+Unresolved in most jurisdictions
+
+Legally binding
+(e.g., Korea
+E-Sig Act)
+3–6 months
+(whitelist
+existing CAs)
+Low (existing
+government
+trust)
+Full ZK
+(nullifier + CA
+Merkle root
+only)
+
+Complementary roles. DID and zk-X509 are not mutually exclusive. DID excels at creating
+new trust relationships in domains where no prior credential infrastructure exists. zk-X509
+excels at bridging existing government-grade trust to the blockchain. In a mature ecosystem,
+a user might hold both: a DID for Web3-native credentials and a zk-X509 registration for
+government-backed identity verification.
+
+7
+
+3
+
+System Architecture
+
+3.1
+
+Overview
+
+The zk-X509 system comprises four components arranged in a layered architecture:
+Frontend (Next.js)
+Browser: NPKI cert selection, wallet connect, TX submission
+CLI invocation
+(registrant address, wallet index)
+Prover CLI (Rust, native application)
+Scan keychain → sign via OS API → prove → return
+SP1 stdin (cert, chain, key,
+timestamp, crl_der, registrant)
+SP1 zkVM Guest Program (Rust)
+1. Parse & validate chain 2. Check CRL 3. Verify key
+4. Compute nullifier + CA hash
+Output: (nullifier, caMerkleRoot, timestamp, registrant)
+ZK Proof + Public Values
+Ethereum Smart Contract (Solidity)
+IdentityRegistry: verify registrant → verify timestamp →
+check CA → check nullifier → verify proof → register
+
+Figure 1: zk-X509 system architecture overview.
+
+3.2
+
+Formal Protocol Specification
+
+We define the registration protocol formally. Let 𝒫 denote the prover (user), 𝒮 the prover
+application (running locally on 𝒫’s machine), 𝒵 the SP1 zkVM, and 𝒱 the on-chain verifier
+(smart contract).
+Notation. - cert: DER-encoded user certificate - sk: User’s private key (RSA PKCS#1 DER
+or ECDSA SEC1 DER) - chain: Certificate chain [certinter1 , … , certinter𝑘 , pkroot ] where pkroot is
+the root CA’s public key (SPKI DER) - CRL: DER-encoded Certificate Revocation List (signed
+by the issuing CA) - addr: 𝒫’s Ethereum address (20 bytes) - 𝑡: Current Unix timestamp - ℋ:
+SHA-256
+Protocol.
+Step 1. 𝒫 → 𝒮: (cert_index, addr, wallet_index?, max_wallets?, disclosure_mask?)
+via local API call. cert_index identifies a certificate discovered by the keychain scanner; optional
+parameters have sensible defaults.
+Step 2. 𝒮:
+1. (cert, identity) ← Keychain.GetIdentity(cert_index)
+2. CRL ← FetchCRL(cert.issuer)
+3. challenge ← ℋ(serial‖addr‖wallet_index‖𝑡‖chain_id)
+4. ownership_sig ← identity.Sign(challenge)
+
+8
+
+// from CA distribution point
+// Security.framework
+
+5. nullifier_sig ← identity.Sign(ℋ(“zk-X509-Nullifier-v2”
+‖registry_addr‖chain_id))
+Private key never leaves OS keychain — no Erase() needed.
+Step 3. 𝒮 → 𝒵: (cert, ownership_sig, nullifier_sig, chain, 𝑡, CRL, addr,
+wallet_index, max_wallets, disclosure_mask, ca_merkle_proof, ca_merkle_root)
+via SP1 stdin. NOTE: no private key.
+Step 4. 𝒵 (inside zkVM):
+1. Parse and validate user certificate: cert_parsed ← ParseDER(cert); Assert 𝑡 ∈ [notBefore, notAfter]
+2. Verify certificate chain: For 𝑖 = 0 to 𝑘−1: parse inter𝑖 , check temporal validity
+3. Verify signatures (RSA or ECDSA, auto-detected from OID):
+single-level: Sig.Verify(pkroot , cert.tbs, cert.sig);
+multi-level: verify each link cert → inter0 → ⋯ → pkroot
+4. Verify and check CRL (if CRL ≠ ∅):
+parse CRL, match issuer, check freshness (thisUpdate ≤ 𝑡 ≤ nextUpdate),
+verify CA signature, assert serial ∉ revoked list
+5. Verify key ownership:
+challenge ← ℋ(serial‖addr‖wallet_index‖𝑡‖chain_id);
+Sig.Verify(cert.pk, challenge, ownership_sig)
+6. Verify wallet index: Assert wallet_index < max_wallets
+7. Verify nullifier signature:
+Sig.Verify(cert.pk, ℋ(“zk-X509-Nullifier-v2”
+‖registry_addr‖chain_id), nullifier_sig)
+8. Compute outputs: nullifier ← ℋ(nullifier_sig‖wallet_index), caRootHash ← ℋ(pkroot ),
+notAfter ← cert.notAfter
+9. Verify CA Merkle membership: MerkleVerify(caRootHash, 𝜋ca , ca_merkle_root)
+10. Selective disclosure (salted with private-key-derived salt):
+salt ← ℋ(“zk-X509-Disclosure-Salt-v1”‖nullifier_sig);
+for each masked bit: hash ← ℋ(field‖salt) or 0x0
+11. Commit public values (caMerkleRoot, NOT caRootHash)
+Step 5. 𝒵 → 𝒮: (𝜋, pubvals) where 𝜋 is the ZK proof.
+Step 6. 𝒮 → 𝒫: (𝜋, pubvals) returned to caller.
+Step 7. 𝒫 → 𝒱: register(𝜋, pubvals) via Ethereum transaction signed by addr.
+Step 8. 𝒱 (on-chain verification):
+1. Decode public values via ABI.Decode(pubvals)
+2. Assert: registrant = msg.sender
+// front-running
+3. Assert: 𝑡proof ≤ block.timestamp
+// no future proofs
+4. Assert: block.timestamp − 𝑡proof ≤ maxProofAge
+// freshness
+5. Assert: caMerkleRoot = contract.caMerkleRoot
+// CA root match
+6. Assert: walletIndex < maxWalletsPerCert
+// wallet limit
+7. Assert: notAfter ≥ block.timestamp
+// cert not expired
+8. Assert: chainId = block.chainid
+// replay prevention
+9. Assert: registryAddress = address(this)
+// cross-DApp binding
+10. If CRL enabled: assert crlMerkleRoot match
+// CRL root
+11. SP1Verifier.verify(vkey, pubvals, 𝜋)
+// ZK proof
+12. Assert: not revoked, not double-registered, expired or new
+13. nullifierOwner[nullifier] ← msg.sender; verifiedUntil[msg.sender] ← notAfter
+14. Emit UserRegistered(msg.sender, nullifier)
+
+9
+
+3.3
+
+Public Values Structure
+
+The shared data structure between the ZK circuit and the smart contract is:
+Table 3: PublicValuesStruct — shared between ZK circuit and smart contract.
+Field
+
+Type
+
+Description
+
+nullifier
+caMerkleRoot
+timestamp
+registrant
+walletIndex
+notAfter
+chainId
+registryAddress
+crlMerkleRoot
+countryHash
+orgHash
+orgUnitHash
+commonNameHash
+
+bytes32
+bytes32
+uint64
+address
+uint32
+uint64
+uint64
+address
+bytes32
+bytes32
+bytes32
+bytes32
+bytes32
+
+ℋ(nullifier_sig‖walletIndex)
+Merkle root of allowed CA set
+Proof generation timestamp
+Wallet address bound to proof
+Wallet slot index
+Certificate expiry
+EIP-155 chain ID
+Target registry address
+CRL Merkle root (0 = disabled)
+ℋ(country‖salt) or 0x0
+ℋ(organization‖salt) or 0x0
+ℋ(org unit‖salt) or 0x0
+ℋ(common name‖salt) or 0x0
+
+This struct is ABI-encoded using alloy-sol-types in Rust and ABI-decoded in Solidity, ensuring binary compatibility across the stack. The caMerkleRoot field replaces a direct caRootHash
+with the Merkle root of the whitelisted CA set, hiding which specific CA issued the certificate
+(Section 3.12). The walletIndex field enables configurable multi-wallet registration (Section
+3.6). The notAfter field enables automatic identity expiry (Section 3.9). The chainId and
+registryAddress fields ensure that each blockchain and each contract deployment produces
+distinct nullifiers. This design intentionally prevents cross-chain identity portability, as different
+chains may have different trust requirements, regulatory environments, and economic models.
+A user must register separately on each chain, enabling per-chain and per-DApp Sybil resistance policies. The crlMerkleRoot field commits the CRL Sorted Merkle Tree root, enabling
+on-chain validation of revocation checking (bytes32(0) disables CRL enforcement). The four
+disclosure hash fields enable selective attribute disclosure (Section 3.11) — each field is either
+the SHA-256 hash of the corresponding certificate attribute salted with a private-key-derived
+salt (when disclosed) or zero (when hidden), controlled by the user’s disclosure_mask.
+
+3.4
+
+ZK Guest Program
+
+The guest program executes inside the SP1 zkVM and performs all sensitive computations. A
+critical design principle is that the user’s private key never enters the zkVM. Instead, the
+prover application uses the OS keychain to sign a challenge, and only the resulting signature
+enters the circuit. This eliminates private key exposure from the proving process entirely.
+The program receives 23 inputs via SP1 stdin, organized into three groups:
+Certificate & ownership inputs (12):
+Input
+
+Type
+
+Visibility
+
+Purpose
+
+cert_der
+
+Vec<u8>
+
+Private
+
+ownership_sig
+
+Vec<u8>
+
+Private
+
+DER-encoded user
+X.509 certificate
+RSA or ECDSA
+signature over
+ownership challenge
+
+10
+
+Input
+
+Type
+
+Visibility
+
+Purpose
+
+nullifier_sig
+
+Vec<u8>
+
+Private
+
+cert_chain
+
+Vec<Vec<u8>>
+
+Private
+
+Deterministic signature
+of fixed domain string
+for nullifier
+Chain:
+[inter1 , … , inter𝑘 , pkroot ]
+Unix timestamp
+DER-encoded CRL
+(empty = skip)
+Wallet address
+Wallet slot index
+(0-based)
+Max wallets per cert
+(enforced in circuit)
+Bitmask: which cert
+fields to reveal (bit
+0=C, 1=O, 2=OU,
+3=CN)
+Merkle proof for CA
+membership (Section
+3.12)
+Expected Merkle root
+of whitelisted CA set
+
+current_timestamp u64
+crl_der
+Vec<u8>
+
+Public (via output)
+Private
+
+registrant
+wallet_index
+
+[u8; 20]
+u32
+
+Public (via output)
+Public (via output)
+
+max_wallets
+
+u32
+
+Private
+
+disclosure_mask
+
+u8
+
+Private
+
+ca_merkle_proof
+
+Vec<[u8; 32]>
+
+Private
+
+ca_merkle_root
+
+[u8; 32]
+
+Public (via output)
+
+Domain separation inputs (2):
+Input
+
+Type
+
+Visibility
+
+Purpose
+
+registry_address [u8; 20]
+
+Public (via output)
+
+chain_id
+
+Public (via output)
+
+Target registry contract
+address (cross-DApp
+binding)
+EIP-155 chain ID
+(cross-chain binding)
+
+u64
+
+CRL Sorted Merkle Tree inputs (9):
+Input
+
+Type
+
+Visibility
+
+Purpose
+
+crl_merkle_root
+
+[u8; 32]
+
+Public (via output)
+
+crl_left_leaf
+
+[u8; 32]
+
+Private
+
+crl_right_leaf
+
+[u8; 32]
+
+Private
+
+crl_left_proof
+
+Vec<[u8; 32]>
+
+Private
+
+crl_left_dirs
+
+Vec<bool>
+
+Private
+
+CRL Sorted Merkle
+Tree root ([0; 32] =
+disabled)
+Left neighbor leaf in
+sorted tree
+Right neighbor leaf in
+sorted tree
+Merkle proof for left
+neighbor
+Direction bits for left
+proof path
+
+11
+
+Input
+
+Type
+
+Visibility
+
+Purpose
+
+crl_right_proof
+
+Vec<[u8; 32]>
+
+Private
+
+crl_right_dirs
+
+Vec<bool>
+
+Private
+
+crl_left_index
+
+u32
+
+Private
+
+crl_right_index
+
+u32
+
+Private
+
+Merkle proof for right
+neighbor
+Direction bits for right
+proof path
+Index of left neighbor
+in sorted tree
+Index of right neighbor
+in sorted tree
+
+The circuit asserts wallet_index < max_wallets before proceeding. All private inputs remain
+hidden within the ZK proof. The thirteen public values committed are: nullifier, caMerkleRoot,
+timestamp, registrant, walletIndex, notAfter, chainId, registryAddress, crlMerkleRoot, and four
+selective disclosure hashes (countryHash, orgHash, orgUnitHash, commonNameHash — zero
+when not disclosed).
+Certificate Parsing. We use the x509-parser crate (v0.16) with default-features = false
+to parse DER-encoded certificates. Disabling default features avoids the ring cryptography
+library, which contains platform-specific assembly incompatible with the RISC-V zkVM target.
+Certificate Chain Verification. The cert_chain input contains intermediate CA certificates followed by the root CA’s public key as the final element. The guest program verifies the
+signature chain: user cert → intermediate CAs → root CA. For single-level PKI (no intermediates), the chain contains only the root CA public key. For Korean NPKI’s 3-level hierarchy, the
+chain contains one intermediate CA certificate and the root CA public key. Each intermediate
+certificate’s temporal validity is also checked.
+CA Signature Verification. A unified verify_cert_signature() function detects the signature algorithm from the OID prefix and dispatches to the appropriate verifier. RSA signatures (OID prefix 1.2.840.113549.1.1) are verified using the pure-Rust rsa crate (v0.9) with
+PKCS#1 v1.5 padding and SHA-256, SHA-1, SHA-384, or SHA-512 digest selection. ECDSA
+signatures (OID prefix 1.2.840.10045.4) are verified using the p256 and p384 crates, with the
+curve detected from the signer’s SPKI namedCurve OID (P-256 or P-384) independently of the
+signature algorithm OID. This separation correctly handles cases where the digest algorithm
+and curve are specified independently per RFC 5758.
+Trustless Certificate Revocation Checking. The crl_der input contains a full DERencoded Certificate Revocation List. Unlike systems that rely on the host to provide pre-filtered
+revocation data, zk-X509 performs trustless CRL verification entirely inside the zkVM:
+1. Parse the DER-encoded CRL using x509_parser::revocation_list.
+2. Issuer matching: Assert that the CRL’s issuer matches the user certificate’s issuer (serial
+numbers are issuer-scoped; checking against a CRL from a different issuer is meaningless).
+3. Freshness validation: Assert thisUpdate ≤ 𝑡 ≤ nextUpdate, ensuring the CRL is
+current at the proof generation time.
+4. Signature verification: Verify the CRL’s signature (RSA or ECDSA, auto-detected)
+using the matching issuer’s public key (intermediate CA for multi-level chains, root CA
+for single-level).
+5. Revocation check: Assert that the user certificate’s serial number is not in the CRL’s
+revoked certificates list.
+This design ensures that a malicious host cannot supply a forged or tampered CRL—the ZK
+proof cryptographically attests that the CRL was signed by the legitimate issuing CA and was
+12
+
+fresh at proof time. The CRL data is not committed to public values; the proof attests only
+that revocation was checked against a valid, CA-signed CRL.
+Signature-Based Key Ownership Verification.
+Rather than importing the private key into the zkVM, the prover application signs a challenge using the OS keychain (macOS Secure Enclave, Windows TPM, or software keystore). The challenge is
+ℋ(serial‖registrant‖wallet_index‖timestamp‖chain_id), binding the ownership proof to the
+specific wallet, slot, proof generation time, and chain. The ZK circuit verifies this signature
+using the certificate’s embedded public key:
+
+Sig.Verify(cert.pk, ℋ(serial‖registrant‖wallet_index‖timestamp‖chain_id), ownership_sig)
+The ownership verifier supports both RSA (PKCS#1 v1.5 with SHA-256) and ECDSA (P256, P-384 with RFC 6979 [23] deterministic nonces). The key type is auto-detected from the
+certificate’s SPKI algorithm OID: RSA keys use direct rsa crate verification, while ECDSA keys
+use the p256/p384 crates with the curve determined from the SPKI namedCurve parameter.
+This approach has three advantages: (1) the private key never exists in the prover’s process
+memory—only the OS keychain handles it at the hardware level, (2) the ownership proof is
+bound to the registrant address and wallet index, preventing signature replay across wallets,
+and (3) the timestamp binding prevents a compromised prover from replaying a captured ownership signature in a later proof — the signature is only valid for the specific proof generation
+timestamp committed as a public value.
+Nullifier Generation. The nullifier is derived from a deterministic signature rather than the
+certificate’s public key:
+nullifier_sig = Sign(sk, ℋ(”zk-X509-Nullifier-v2”‖contract_address‖chain_id))
+nullifier = ℋ(nullifier_sig‖wallet_index)
+The prover signs a fixed domain string with the certificate’s private key. RSA PKCS#1 v1.5
+and ECDSA with RFC 6979 [23] deterministic nonces are both inherently deterministic — the
+same key always produces the same signature, ensuring nullifier consistency. The ZK circuit
+verifies the nullifier_sig against the certificate’s public key before computing the nullifier.
+This signature-based design prevents a critical linkability attack present in public-key-based
+nullifiers. The certificate’s public key is semi-public data — it is shared with banks, government
+portals, and CRL distribution points during normal certificate usage. If the nullifier were
+ℋ(cert.pk‖wallet_index), any party possessing the certificate could compute all nullifiers and
+track the user’s on-chain registrations. With the signature-based approach, only the private key
+holder can produce nullifier_sig, making the nullifier computationally unpredictable without
+the private key. The wallet_index ensures that each wallet slot produces a distinct nullifier,
+enabling configurable multi-wallet registration.
+
+3.5
+
+Smart Contract
+
+The IdentityRegistry contract manages on-chain state:
+The maxWalletsPerCert parameter is set once during proxy initialization, enabling configurable registration policy per L2 deployment (see Section 3.6). The caLeaves array stores
+the on-chain list of trusted CA hashes, readable by anyone for off-chain Merkle proof generation. The caExists mapping prevents duplicate CA additions. The crlMerkleRoot stores the
+13
+
+Table 7: IdentityRegistry state variables.
+Variable
+
+Type
+
+Description
+
+sp1Verifier
+programVKey
+maxWalletsPerCert
+caMerkleRoot
+caLeaves
+caExists
+crlMerkleRoot
+nullifierOwner
+revokedNullifiers
+verifiedUntil
+owner
+pendingOwner
+maxProofAge
+paused
+previousCaMerkleRoot
+caMerkleRootUpdatedAt
+caRootGracePeriod
+minDisclosureMask
+
+ISP1Verifier (write-once)
+bytes32 (write-once)
+uint32 (write-once)
+bytes32
+bytes32[]
+bytes32 ⇒ bool
+bytes32
+bytes32 ⇒ address
+bytes32 ⇒ bool
+address ⇒ uint64
+address
+address
+uint256
+bool
+bytes32
+uint256
+uint256
+uint8 (write-once)
+
+On-chain proof verifier
+ZK program verification key
+Max wallets per certificate
+Merkle root of allowed CA set
+On-chain list of trusted CA hashes
+Duplicate CA prevention
+CRL Merkle root (0 = disabled)
+Nullifier → registered wallet
+Permanently revoked nullifiers
+Wallet → cert expiry timestamp
+Contract administrator
+For 2-step ownership transfer
+Max proof age (5 min–24 hours)
+Emergency stop flag
+Previous CA Merkle root (grace)
+Timestamp of last CA root update
+Grace period for old CA root
+Minimum required disclosure fields
+
+CRL Sorted Merkle Tree root for on-chain CRL validation (bytes32(0) disables CRL checking).
+The nullifierOwner mapping tracks which address owns each nullifier, enabling reRegister().
+The verifiedUntil mapping stores the certificate’s notAfter timestamp instead of a boolean,
+enabling automatic identity expiry when the underlying certificate expires (see Section 3.9).
+register(). A shared _validateProof() function decodes public values and performs validation:
+1. Registrant binding: registrant == msg.sender — prevents front-running
+2. Timestamp freshness: block.timestamp - proofTimestamp � maxProofAge (adjustable: 5 min to 24 hours, default 1 hour)
+3. CA Merkle root match: caMerkleRoot == contract.caMerkleRoot or caMerkleRoot
+== previousCaMerkleRoot within caRootGracePeriod (default 24 hours) — allows
+proofs generated before a CA list update to remain valid during the grace window
+4. Wallet index range: walletIndex < maxWalletsPerCert — enforces multi-wallet
+limit
+5. Certificate not expired: notAfter >= block.timestamp — rejects already-expired
+certificates
+6. Chain ID match: chainId == block.chainid — prevents cross-chain replay
+7. Registry address match: registryAddress == address(this) — prevents crossDApp replay
+8. CRL root match (if enabled): crlMerkleRoot == contract.crlMerkleRoot — validates revocation checking
+9. Proof validity: sp1Verifier.verifyProof(programVKey, publicValues, proof)
+After validation, register() additionally checks:
+10. Nullifier not revoked: revokedNullifiers[nullifier] == false
+11. Nullifier uniqueness: nullifierOwner[nullifier] == address(0)
+12. Address not already verified: verifiedUntil[msg.sender] < block.timestamp —
+allows re-registration after cert expiry
+13. State update: nullifierOwner[nullifier] = msg.sender; verifiedUntil[msg.sender]
+= notAfter
+14
+
+reRegister(). Enables self-service wallet migration without admin approval. A user who loses
+access to their wallet can generate a new proof with the same certificate and a new registrant
+address. The contract verifies the proof, unverifies the old wallet, and registers the new one. This
+eliminates the centralization concern of admin-only revocation for wallet changes. The nullifier
+is reused (same certificate, same wallet index), so the old wallet is automatically displaced.
+Administrative functions: - addCA(bytes32 caHash): Adds a single trusted CA hash to
+the on-chain list. Automatically recomputes caMerkleRoot via _recomputeCaMerkleRoot().
+Reverts if the CA hash is zero or already exists (duplicate prevention). - addCAs(bytes32[]
+caHashes): Batch adds multiple trusted CA hashes in a single transaction. Recomputes
+the Merkle root once at the end, saving gas compared to individual addCA() calls. removeCA(uint256 index): Removes a trusted CA by index using swap-with-last-and-pop
+optimization. Automatically recomputes caMerkleRoot. - getCaCount() / getCaLeaves():
+View functions returning the number of trusted CAs and the full list of CA hashes, respectively. getCaLeaves() enables off-chain users to compute Merkle proofs for proof
+generation.
+- updateCaMerkleRoot(bytes32 newRoot): Manual override for the CA
+Merkle root. Primarily used for initial setup or migration; during normal operation,
+addCA/removeCA auto-compute the root. - updateCrlMerkleRoot(bytes32 newRoot): Updates the CRL Sorted Merkle Tree root. Set to bytes32(0) to disable CRL checking on-chain.
+- setMaxProofAge(uint256 newAge): Adjusts the maximum allowed proof age, bounded
+between 5 minutes and 24 hours. Enables L2 deployments to tune the freshness window based
+on block time characteristics. - revokeIdentity(bytes32 nullifier, bytes32 reason):
+Permanently revokes a nullifier and unverifies the associated wallet. This is irreversible
+— the nullifier is added to revokedNullifiers and can never be re-registered, even via
+reRegister(). - pause() / unpause(): Emergency stop mechanism to halt all registrations. - transferOwnership(address) / acceptOwnership(): Two-step ownership transfer
+preventing accidental transfers.
+
+3.6
+
+Configurable Registration Policy
+
+Different applications require different identity-to-wallet mappings. DAO governance demands
+strict “one person, one vote” (1:1), while decentralized exchanges need traders to verify multiple
+wallets for trading, custody, and cold storage.
+zk-X509 addresses this via the maxWalletsPerCert parameter, set once at contract initialization:
+Setting
+
+Policy
+
+Use Case
+
+= 1
+
+Strict: one certificate, one
+wallet
+Moderate: a few wallets
+per identity
+Flexible: many wallets, all
+verified
+
+DAO voting, airdrops
+
+= 3
+= N
+
+DeFi (trading / custody / cold)
+DEX, multi-account platforms
+
+The mechanism works through the wallet_index parameter in the nullifier:
+nullifier = ℋ(nullifier_sig‖wallet_index)
+Each wallet_index (0, 1, 2…) produces a distinct nullifier from the same deterministic signature.
+The ZK circuit enforces wallet_index < max_wallets, and the smart contract independently
+15
+
+verifies walletIndex < maxWalletsPerCert. Setting maxWalletsPerCert = 1 reduces to the
+strict 1:1 Sybil-resistant mode. Regardless of the setting, every verified wallet is backed by a
+real, government-issued certificate.
+This parameterization enables a single zk-X509 deployment on an L2 to serve multiple protocols
+with different trust requirements.
+
+3.7
+
+Self-Service Re-Registration
+
+A critical limitation of naive nullifier-based systems is wallet lock-in: if a user loses access to their
+wallet, the nullifier is consumed and the certificate becomes permanently unusable. Traditional
+solutions require admin intervention, introducing centralization.
+zk-X509 solves this with reRegister(): a user generates a new proof with the same certificate
+but a new registrant address. The contract verifies the proof, unverifies the old wallet, and registers the new one. No admin approval is required—the ZK proof itself serves as authentication
+that the caller owns the certificate.
+This design ensures that wallet migration is self-sovereign: users control their own identity
+lifecycle without depending on any centralized party.
+
+3.8
+
+OS Keychain Integration
+
+The prover application scans the OS keychain for identities (certificate + private key pairs) via
+platform-native APIs. On macOS, the login keychain is queried through Security.framework;
+on Windows, the certificate store is accessed via CNG (Cryptography API: Next Generation).
+The private key is managed entirely by the OS keychain and never leaves the secure hardware boundary. Signing is performed by calling the keychain’s signing API
+(SecKey.createSignature() on macOS) — the prover application receives only the resulting
+signature bytes and never accesses the raw private key material. The signing algorithm (RSA
+PKCS#1 v1.5 or ECDSA) is auto-detected from the certificate’s SPKI algorithm OID. This
+model provides the strongest private key isolation: even the prover’s process memory never
+contains the key.
+For each discovered identity, the scanner extracts metadata (subject, issuer, serial number,
+expiry) for display in the frontend’s certificate selection UI. Users authenticate via the OS-level
+keychain prompt (e.g., macOS password dialog or Touch ID), after which the keychain generates
+ownership_sig and nullifier_sig without exposing the private key to any user-space process.
+
+3.9
+
+Automatic Identity Expiry
+
+A subtle but critical issue in on-chain identity systems is credential staleness: once a wallet
+is marked as verified, it typically remains so indefinitely, even after the underlying certificate
+expires or is revoked. This creates a disconnect between the certificate lifecycle and the on-chain
+state.
+zk-X509 resolves this by committing the certificate’s notAfter timestamp as a public value.
+The smart contract stores this in verifiedUntil[address] instead of a boolean flag. The
+isVerified() function checks verifiedUntil[user] >= block.timestamp, causing verification to automatically lapse when the certificate expires. Users must re-prove with a renewed
+certificate to maintain their verified status.
+This design has two advantages: (1) on-chain identity tracks the real-world credential lifecycle
+without manual intervention, and (2) it creates a natural re-verification cycle that limits the
+
+16
+
+damage window if a certificate is compromised — the compromised identity expires automatically.
+
+3.10
+
+Private Key Isolation
+
+A critical design decision in zk-X509 is that the private key never enters the zkVM. The
+circuit receives only two deterministic signatures (ownership_sig, nullifier_sig) as inputs,
+both generated on the user’s local device via the OS keychain (macOS Security.framework,
+Windows CNG). On devices with hardware-backed keystores (Secure Enclave, TPM), the key
+may never leave secure hardware. This architectural separation of signing and proving ensures
+that the most sensitive cryptographic material — the private key — remains strictly confined
+to local hardware.
+The proving flow is entirely local:
+1. Signing (∼1 second).
+The prover application generates ownership_sig and
+nullifier_sig using the OS keychain. The private key never leaves the keychain —
+only the resulting signature bytes are returned to the prover process.
+2. Proving (∼5 minutes CPU). The SP1 zkVM executes the guest program locally, receiving only the signatures, certificate, and chain data as inputs. The private key is never
+part of the zkVM witness.
+3. Submission. The user submits the proof and public values to the blockchain via
+register().
+Comparison with other systems. In zk-email, the raw email content and DKIM signature
+enter the circuit as private inputs; the DKIM signing key itself remains on the email provider’s
+server and never enters the circuit. In Semaphore, the user’s secret identity enters the circuit
+directly. If proof generation in either system were offloaded to a third party, these private
+witness data would be exposed. In zk-X509, the private key never leaves the user’s device at
+any stage — the zkVM witness contains only signatures and publicly derivable certificate data.
+This provides a stronger security model in the dimension of private key exposure: no credential
+secret enters the ZK circuit, whereas other systems require at least some private credential data
+as witness inputs.
+
+3.11
+
+Selective Attribute Disclosure
+
+Prior sections describe a binary identity model: the verifier learns only “this wallet holds a valid
+certificate” without any attributes. While this suﬀices for simple Sybil resistance, real-world
+applications often require granular attribute verification: “this user is from country X” or
+“this user belongs to organization Y” — without revealing other attributes like name or ID
+number.
+zk-X509 implements selective disclosure via a disclosure_mask bitmask input to the ZK circuit:
+Bit
+
+Field
+
+X.509 OID
+
+Example
+
+0
+1
+2
+3
+
+Country (C)
+Organization (O)
+Organizational Unit (OU)
+Common Name (CN)
+
+2.5.4.6
+2.5.4.10
+2.5.4.11
+2.5.4.3
+
+“KR”, “EE”, “DE”
+“KFTC”, “Samsung”
+“Personal”, “Engineering”
+(user’s name — typically hidden)
+
+For each bit set in the mask, the circuit extracts the corresponding field from the certificate’s subject DN, hashes it with a private-key-derived salt, and commits the
+hash as a public value. For unset bits, zero is committed. The salt is computed as
+17
+
+ℋ(”zk-X509-Disclosure-Salt-v1”‖nullifier_sig), where nullifier_sig is the deterministic
+signature used for nullifier generation. This salt is deterministic (same certificate always
+produces the same salt) yet private (only the private key holder can compute nullifier_sig),
+preventing brute-force attacks on small input spaces such as country codes (∼200 values).
+Without this salt, an attacker could precompute ℋ(”KR”), ℋ(”US”), etc., and match against
+on-chain countryHash values. With the salt, each user’s hashes are unique and unpredictable.
+User sovereignty. The disclosure_mask is chosen by the user at proof generation time, not
+by the verifier. The same certificate can produce different proofs for different applications: a
+DAO voting contract may require only countryHash, while a corporate DeFi protocol may
+additionally require orgHash. The user decides what to reveal on a per-proof basis.
+Privacy guarantee. Fields with mask bit = 0 produce a zero hash in the public values,
+revealing no information. The ZK zero-knowledge property ensures that even the existence of
+undisclosed fields is hidden — the verifier cannot distinguish “field is empty in the certificate”
+from “field exists but was not disclosed.”
+
+3.12
+
+CA-Anonymous Verification via Merkle Tree
+
+In a multi-national deployment, directly revealing caRootHash (the SHA-256 hash of the root
+CA’s public key) as a public value discloses which CA issued the certificate — effectively revealing the user’s jurisdiction (e.g., “Korean CA” vs “Estonian CA”). This narrows the anonymity
+set and may be unacceptable for privacy-sensitive applications.
+zk-X509 addresses this by replacing the direct caRootHash output with a Merkle membership
+proof. The design works as follows:
+1. Off-chain setup. The contract administrator constructs a Merkle tree whose leaves are
+the SHA-256 hashes of all whitelisted CA root public keys: leaves = {ℎ1 , ℎ2 , … , ℎ𝑛 } where
+ℎ𝑖 = ℋ(pkroot ). The Merkle root 𝑀 is stored on-chain.
+𝑖
+
+2. Proof generation. The prover application computes caRootHash = ℋ(pkroot ) and
+generates a Merkle proof 𝜋𝑀 demonstrating that caRootHash is a leaf in the tree with
+root 𝑀 . Both 𝜋𝑀 and 𝑀 are passed to the ZK circuit as private inputs.
+3. ZK verification. Inside the zkVM, the circuit:
+• Computes caRootHash = ℋ(pkroot ) (already computed during chain verification)
+• Verifies the Merkle proof: MerkleVerify(caRootHash, 𝜋𝑀 , 𝑀 )
+• Commits 𝑀 (the Merkle root) as the public value caMerkleRoot, instead of the leaf
+caRootHash
+4. On-chain verification. The smart contract stores a single bytes32 caMerkleRoot and
+checks 𝑀 = contract.caMerkleRoot, confirming that the proof was generated against the
+current approved CA set.
+Privacy improvement. The on-chain disclosure is reduced from “this user has a certificate
+from CA 𝑋” to “this user has a certificate from one of the 𝑛 whitelisted CAs.” The anonymity
+set grows from 1 (a single CA’s user base) to the union of all whitelisted CAs’ user bases.
+For a deployment whitelisting Korean NPKI (∼20M), Estonian eID (∼1.3M), and German eID
+(∼46M), the anonymity set expands from a single jurisdiction to ∼67M users.
+Quantitative anonymity analysis. The effective anonymity set is not simply the sum of all
+whitelisted CA user populations. An adversary with auxiliary information can narrow the set
+through statistical inference:
+
+18
+
+Factor
+
+De-anonymization vector
+
+Mitigation
+
+Registration
+timing
+Gas payment
+source
+
+Correlate registration timestamp with CA
+issuance patterns (e.g., Korean banking hours)
+Trace ETH funding of the registrant address to
+a jurisdiction
+
+Selective
+disclosure
+
+countryHash directly reveals jurisdiction,
+reducing anonymity set to single-country users
+
+Transaction
+volume
+
+Randomized proof
+submission delays
+Use fresh wallets funded
+via privacy-preserving
+bridges
+User-controlled — do
+not disclose unless
+required
+Whitelist CAs with
+large user populations
+
+Low-population CAs (e.g., Estonia ∼1.3M) have
+fewer active blockchain users, making correlation
+easier
+notAfter timestamp may correlate with
+Round notAfter to
+CA-specific validity periods (e.g., Korean NPKI: coarser granularity
+1 year, Estonian eID: 5 years)
+(future work)
+
+Certificate
+expiry patterns
+
+For a deployment with 𝑛 whitelisted CAs, if CA 𝑖 has 𝑁𝑖 active certificate holders, the theoretical
+𝑛
+anonymity set is 𝐴 = ∑𝑖=1 𝑁𝑖 . However, the effective anonymity set against an adversary
+who can estimate the prior probability 𝑝𝑖 = 𝑁𝑖 /𝐴 of a user belonging to CA 𝑖 is bounded
+by the min-entropy: 𝐻∞ = − log2 (max𝑖 𝑝𝑖 ). For the Korean-Estonian-German deployment:
+𝑝Germany = 46/67.3 ≈ 0.68, giving 𝐻∞ ≈ 0.56 bits — meaning an adversary’s best guess
+(German eID) is correct 68% of the time, even without selective disclosure. Adding more
+CAs with comparable population sizes improves the effective anonymity set. A deployment
+whitelisting 10+ CAs with populations above 5M each would achieve 𝐻∞ > 3 bits, making
+jurisdiction guessing impractical.
+Merkle tree construction. A standard binary SHA-256 Merkle tree [20] with sorted-pair
+hashing is used: 𝐻(min(𝑎, 𝑏)‖ max(𝑎, 𝑏)). Sorted-pair hashing prevents second preimage attacks
+and eliminates the need for direction bits in the proof path. For 𝑛 whitelisted CAs, the proof
+consists of ⌈log2 𝑛⌉ hashes (e.g., 4 hashes for 16 CAs), adding negligible overhead to the ZK
+circuit (∼log2 𝑛 additional SHA-256 computations).
+CA set updates. The contract maintains an on-chain list of trusted CA hashes (caLeaves[]).
+When CAs are added or removed via addCA()/addCAs()/removeCA(), the contract automatically recomputes the Merkle root via _recomputeCaMerkleRoot() using the same sorted-pair
+SHA-256 algorithm as the zkVM. This ensures consistency between on-chain and off-chain computations. Off-chain users call getCaLeaves() to read the current CA set and compute their
+Merkle proofs. Proofs generated against the old root will be rejected — users must regenerate
+proofs with the updated tree.
+
+4
+
+Implementation
+
+4.1
+
+Technology Stack
+Component
+
+Technology
+
+Version
+
+ZK Prover
+ZK Guest Language
+Smart Contracts
+Prover CLI
+Frontend
+
+SP1 zkVM (Succinct)
+Rust (RISC-V target)
+Solidity + Foundry
+Rust
+Next.js + React + ethers.js
+
+v6.0.1
+stable
+^0.8.20 / v1.5.1
+—
+16 / 19 / 6
+
+19
+
+4.2
+
+Component
+
+Technology
+
+Version
+
+X.509 Parsing
+RSA Verification
+ECDSA Verification
+
+x509-parser (no_std)
+rsa (pure Rust)
+p256, p384 (pure Rust)
+
+0.16
+0.9
+0.13
+
+Repository Structure
+Table 12: Repository structure.
+Directory
+
+Description
+
+lib/
+program/
+script/
+contracts/
+backend/
+frontend/
+certs/
+docs/
+
+Shared types (PublicValuesStruct)
+SP1 Guest program (zkVM)
+SP1 Host (CLI, keychain integration)
+Solidity (IdentityRegistry, tests, deploy scripts)
+CA guide API server (Node.js/TypeScript)
+Next.js web UI
+Test certificate generator (OpenSSL scripts)
+Documentation and this paper
+
+4.3
+
+Performance Evaluation
+
+4.3.1
+
+Off-Chain Cost: ZK Proving
+
+Measured on Apple M-series CPU using SP1 zkVM v6.0.1 execute mode with a single-level
+certificate chain (user cert + root CA). The signature-based nullifier design requires three signature verifications per proof (ownership, nullifier, chain), making signature algorithm selection
+the dominant cost factor:
+Configuration
+
+SP1 Cycles
+
+vs RSA
+baseline
+
+RSA-2048 (single-level, full disclosure)
+RSA-2048 (no disclosure, mask=0x00)
+RSA-2048 + CRL verification
+ECDSA P-256 (single-level, full
+disclosure)
+ECDSA P-384 (single-level, full
+disclosure)
+
+17,399,633
+17,384,766
+23,163,293
+11,803,639
+
+—
+−0.1%
++33.1%
+−32.2%
+
+47,775,211
+
++174.6%
+
+Key findings:
+1. ECDSA P-256 is 32% cheaper than RSA-2048 — recommended for new certificate
+deployments. Single-level P-256 verification completes in 11.8M cycles.
+2. ECDSA P-384 is unexpectedly expensive — 2.7× more costly than RSA-2048. The
+384-bit elliptic curve field operations cost approximately 4× more than 256-bit operations.
+P-384 should only be used when mandated by policy (e.g., CNSA Suite).
+3. CRL verification adds 33% — approximately 5.8M additional cycles for a small test
+CRL (<1KB, 1 revoked entry). Real-world CRLs with thousands of entries would be
+significantly more expensive. For deployments where CRL cost is prohibitive, on-chain
+revocation via revokeIdentity() provides an alternative.
+
+20
+
+4. Selective disclosure is essentially free — full disclosure (4 fields) vs none differs
+by only ∼15K cycles (0.1%), as the SHA-256 cost is negligible compared to signature
+verification.
+Cost breakdown (RSA single-level, estimated):
+Operation
+
+Estimated Cycles
+
+RSA signature verify (ownership)
+RSA signature verify (chain)
+RSA signature verify (nullifier)
+SHA-256 hashing (all)
+Merkle proof verification
+Selective disclosure
+X.509 parsing + other
+
+∼5.7M
+∼5.7M
+∼5.7M
+∼200K
+∼40K
+∼15K
+∼100K
+
+Proportion
+33%
+33%
+33%
+1%
+<1%
+<1%
+<1%
+
+Signature verification dominates at 99% of total cycles. The primary optimization lever is
+reducing signature count or switching to ECDSA P-256.
+Multi-level chain cost. Each additional chain level adds one signature verification (∼5.7M
+cycles for RSA-2048, ∼3.9M for P-256):
+Chain Depth
+
+RSA-2048 Cycles
+
+P-256 Cycles
+
+∼17.4M
+∼23.1M
+∼28.8M
+
+∼11.8M
+∼15.7M
+∼19.6M
+
+1 (direct root signing)
+2 (1 intermediate)
+3 (2 intermediates)
+
+4.3.2
+
+On-Chain Cost: Verification
+
+Gas measurements on Ethereum (Foundry test environment):
+Operation
+
+Gas
+
+Notes
+
+Contract deployment
+
+∼1,338,947
+
+register()
+
+∼300,000
+
+addCA()
+
+26,078
+
+revokeIdentity()
+isVerified()
+
+∼8,500
+∼2,600
+
+IdentityRegistry +
+SP1VerifierGroth16
+With Groth16 on-chain
+verifier
+Owner only,
+auto-recomputes Merkle
+root
+Owner only, permanent
+View function
+
+The ∼300K gas cost for register() with Groth16 verification remains well within practical
+limits for Ethereum L1 and is negligible on L2 rollups.
+4.3.3
+
+End-to-End Latency
+
+21
+
+Phase
+
+Time
+
+Notes
+
+Keychain signing (OS
+keychain)
+SP1 execute (no proof, CPU)
+
+< 1 second
+
+SP1 prove (CPU, Apple M1)
+
+∼5 minutes
+
+SP1 prove (GPU, estimated)
+On-chain verification
+
+∼1–2 minutes
+1 block confirmation
+
+Two signatures (ownership +
+nullifier)
+Circuit validation only, no
+proof
+Measured on Apple M1,
+single-level P-256
+GPU acceleration via CUDA
+Groth16 proof verification
+
+∼15 seconds
+
+Practical impact of proving time. The ∼5 minute CPU proving time must be evaluated
+in the context of actual usage patterns. Identity registration is an infrequent operation: a
+user generates a proof once per certificate per registry, and certificates are typically valid for
+1–3 years (Korean NPKI: 1 year, Estonian eID: up to 5 years). The amortized proving cost
+is therefore ∼5 minutes per year — comparable to the time required to complete a traditional
+KYC onboarding process, which typically involves document upload, video verification, and
+manual review over 1–3 days.
+Scenario
+
+Frequency
+
+Proving time
+
+Initial registration
+Certificate renewal
+Wallet migration
+(reRegister)
+Verification check
+(isVerified)
+
+Once per registry
+Once per 1–3 years
+Rare (wallet loss)
+
+∼5 minutes
+∼5 minutes
+∼5 minutes
+
+Per transaction
+
+0 (on-chain view call)
+
+For user experience, proof generation can be performed in the background while the user continues other tasks. The system does not require the user to remain active during proving — the
+process is non-interactive after the initial keychain signing step.
+
+4.4
+
+Testing
+
+The system includes three levels of testing:
+1. Smart contract unit tests (Foundry): Comprehensive test suites covering IdentityRegistry (registration, re-registration, double-registration prevention, registrant mismatch,
+CA Merkle root validation with grace period, timestamp validation, chain ID mismatch,
+registry address mismatch, wallet index out-of-range, certificate expiry, nullifier revocation, CA management, CRL Sorted Merkle root validation, pause/unpause, max proof age
+adjustment, minimum disclosure mask enforcement, and two-step ownership management)
+and RegistryFactory (registry creation, metadata tracking, beacon proxy deployment, and
+access control).
+2. SP1 execute mode: Runs the ZK program without proof generation for fast iteration
+(∼15 seconds), validating circuit logic.
+3. End-to-end integration: Anvil local chain + contract deployment + prover CLI +
+frontend registration, verified with cast commands.
+
+4.5
+
+Supported Signature Algorithms
+
+22
+
+OID
+
+Algorithm
+
+Status
+
+1.2.840.113549.1.1.11sha256WithRSAEncryption
+1.2.840.113549.1.1.5 sha1WithRSAEncryption
+1.2.840.113549.1.1.12sha384WithRSAEncryption
+1.2.840.113549.1.1.13sha512WithRSAEncryption
+1.2.840.10045.4.3.2 ecdsa-with-SHA256 (P-256)
+1.2.840.10045.4.3.3 ecdsa-with-SHA384 (P-384)
+
+Supported
+Supported (legacy NPKI)
+Supported
+Supported
+Supported
+Supported
+
+SHA-1 support is included specifically for backward compatibility with legacy Korean NPKI
+certificates that predate the SHA-256 migration. ECDSA support (P-256 and P-384) extends
+compatibility to modern certificate ecosystems that use elliptic curve cryptography, including
+newer government PKI deployments and corporate CAs. The signature algorithm OID determines the digest function, while the curve is independently detected from the signer’s SPKI
+namedCurve OID [30], correctly handling the RFC 5758 separation of concerns.
+
+5
+
+Security Analysis
+
+5.1
+
+System Model
+
+The system involves three entity types:
+• Prover (𝒫): The user who owns an X.509 certificate and wishes to register on-chain. 𝒫
+runs the prover as a local application on their own machine.
+• Verifier (𝒱): The Ethereum smart contract (IdentityRegistry) that verifies proofs and
+manages registration state.
+• Certificate Authority (CA): A trusted authority (e.g., KFTC) whose root public key
+hash is whitelisted in 𝒱.
+Localhost assumption. The prover runs as a native application on the user’s machine. Private
+keys remain within the OS keychain and never enter general process memory; only signature
+results are passed to the proving engine. The security boundary is limited to the user’s own
+operating system, equivalent to the trust model of any local application that reads certificate
+files (e.g., a web browser using client certificates).
+
+5.2
+
+Adversary Model
+
+We adopt the Dolev-Yao adversary model [12]. The adversary 𝒜 has the following capabilities:
+• 𝒜 can observe all transactions on the public blockchain, including proof bytes, public
+values, and transaction metadata (sender address, gas price, nonce).
+• 𝒜 can submit arbitrary transactions to the smart contract, including crafted proofs and
+replayed data from other users’ transactions.
+• 𝒜 can monitor the mempool and attempt to front-run pending transactions by submitting
+competing transactions with higher gas prices.
+• 𝒜 can attempt to forge certificates or generate proofs with invalid inputs.
+Trust assumptions. We assume:
+• A1 (Local security): 𝒜 cannot compromise the user’s local machine (i.e., cannot read
+files from the user’s filesystem or inspect process memory).
+• A2 (CA integrity): The CA’s private signing key has not been compromised.
+• A3 (Cryptographic hardness): RSA is secure under the factoring assumption [25];
+ECDSA is secure under the elliptic curve discrete logarithm assumption; SHA-256 is
+23
+
+collision-resistant and preimage-resistant. Signature schemes satisfy EUF-CMA security
+[17].
+• A4 (ZK soundness): The SP1 proof system is computationally sound: no PPT adversary can generate a valid proof for a false statement with non-negligible probability.
+
+5.3
+
+Security Definitions
+
+We formalize eight security properties using game-based definitions. In each game, 𝒜 interacts
+with a challenger 𝒞 that simulates the system.
+forge
+
+Definition 1 (Unforgeability) Consider the game Exp𝒜 :
+forge
+
+Game Exp𝒜
+
+:
+
+1. 𝒞 deploys IdentityRegistry with verification key vkey and whitelists CA root hashes {ℎ1 , … , ℎ𝑛 }
+2. 𝒜 is given: vkey, {ℎ1 , … , ℎ𝑛 }, the contract address, and access to the public blockchain
+3. 𝒜 is NOT given: any valid certificate or private key
+∗
+4. 𝒜 outputs: (𝜋∗ , pubvals )
+∗
+5. 𝒜 wins if: 𝒱.register(𝜋∗ , pubvals ) succeeds
+
+zk-X509 is unforgeable if for all PPT adversaries 𝒜:
+forge
+
+Pr[Exp𝒜
+
+= 1] ≤ negl(𝜆)
+link
+
+Definition 2 (Unlinkability) Consider the game Exp𝒜 :
+link
+
+Game Exp𝒜 :
+1. 𝒞 generates two valid certificates (cert0 , 𝑠𝑘0 ) and (cert1 , 𝑠𝑘1 ) both signed by the same CA
+2. 𝒞 generates registrations for both, producing nullifiers 𝑛0 and 𝑛1
+3. 𝒞 flips a random bit 𝑏 ∈ {0, 1}
+4. 𝒜 is given: 𝑛𝑏 , 𝑛1−𝑏 (in random order), and the caMerkleRoot
+5. 𝒜 is NOT given: the certificates, private keys, or serial numbers
+6. 𝒜 outputs: 𝑏′
+7. 𝒜 wins if: 𝑏′ = 𝑏
+
+zk-X509 is unlinkable if for all PPT adversaries 𝒜:
+1
+link
+∣Pr[Exp𝒜 = 1] − ∣ ≤ negl(𝜆)
+2
+double
+
+Definition 3 (Double-Registration Resistance) Consider the game Exp𝒜
+double
+
+Game Exp𝒜
+
+:
+
+:
+
+1. 𝒞 deploys IdentityRegistry with maxWalletsPerCert = 1 and whitelists CA roots
+2. 𝒜 is given: one valid certificate (cert, 𝑠𝑘) and two addresses addr1 , addr2
+3. 𝒜 outputs: two registration transactions tx1 = (𝜋1 , pubvals1 ) from addr1 and tx2 =
+(𝜋2 , pubvals2 ) from addr2 , both using wallet_index = 0
+4. 𝒜 wins if: both 𝒱.register(tx1 ) and 𝒱.register(tx2 ) succeed
+
+zk-X509 is double-registration resistant if for all PPT adversaries 𝒜:
+double
+
+Pr[Exp𝒜
+
+= 1] ≤ negl(𝜆)
+24
+
+front
+
+Definition 4 (Front-Running Immunity) Consider the game Exp𝒜 :
+front
+
+Game Exp𝒜
+
+:
+
+1. An honest user 𝒫 generates a valid registration tx = (𝜋, pubvals) for addr𝑃
+2. 𝒜 observes tx in the mempool before it is mined
+′
+3. 𝒜 outputs: tx′ = (𝜋′ , pubvals ) from addr𝐴 ≠ addr𝑃 where 𝒜 may copy, modify, or replay any
+data from tx
+4. 𝒜 wins if: 𝒱.register(tx′ ) succeeds using any data derived from tx
+
+zk-X509 is front-running immune if for all PPT adversaries 𝒜:
+front
+
+Pr[Exp𝒜
+
+= 1] ≤ negl(𝜆)
+ca-anon
+
+Definition 5 (CA-Membership Hiding) Consider the game Exp𝒜
+ca-anon
+
+Game Exp𝒜
+
+:
+
+:
+
+1. 𝒞 whitelists two CAs: CA0 and CA1 , constructing a Merkle tree with roots {ℎ0 = ℋ(pk0 ), ℎ1 =
+ℋ(pk1 )} and Merkle root 𝑀
+2. 𝒞 generates a valid certificate cert𝑏 signed by CA𝑏 , where 𝑏 ∈ {0, 1} is chosen uniformly at
+random
+3. 𝒞 generates a registration proof 𝜋 with public values pubvals (containing caMerkleRoot = 𝑀 )
+4. 𝒜 is given: 𝜋, pubvals, 𝑀 , and the public keys pk0 , pk1
+5. 𝒜 is NOT given: cert𝑏 , 𝑠𝑘𝑏 , or the Merkle proof path
+6. 𝒜 outputs: 𝑏′
+7. 𝒜 wins if: 𝑏′ = 𝑏
+
+zk-X509 satisfies CA-membership hiding if for all PPT adversaries 𝒜:
+ca-anon
+
+∣Pr[Exp𝒜
+
+1
+= 1] − ∣ ≤ negl(𝜆)
+2
+transfer
+
+Definition 6 (Non-Transferability) Consider the game Exp𝒜
+transfer
+
+Game Exp𝒜
+
+:
+
+:
+
+1. 𝒞 deploys IdentityRegistry and whitelists CA roots
+2. An honest user 𝒫 holds (cert, 𝑠𝑘) and does NOT cooperate with 𝒜 (i.e., 𝒫 does not sign any
+challenges, share signatures, or reveal any private data to 𝒜)
+3. 𝒜 is given: access to the public blockchain, 𝒫’s on-chain registration (if any), and 𝒫’s certificate
+(public data)
+∗
+4. 𝒜 outputs: (𝜋∗ , pubvals ) with a registrant address controlled by 𝒜
+∗
+5. 𝒜 wins if: 𝒱.register(𝜋∗ , pubvals ) succeeds using 𝒫’s certificate
+
+zk-X509 is non-transferable if for all PPT adversaries 𝒜:
+transfer
+
+Pr[Exp𝒜
+
+= 1] ≤ negl(𝜆)
+
+Scope. This definition captures involuntary transfer only. If the certificate holder voluntarily
+shares their private key or pre-computed signatures, transfer becomes possible — this is a
+fundamental limitation shared by all credential systems (Section 5.5.5).
+
+25
+
+5.4
+
+Security Proofs
+
+Theorem 1 (Unforgeability) Under assumptions A2 (CA integrity), A3 (RSA hardness,
+SHA-256 collision resistance), and A4 (ZK soundness), zk-X509 satisfies unforgeability (Definition 1).
+forge
+
+Proof. Suppose 𝒜 wins Exp
+with non-negligible probability. Then 𝒜 produces
+∗
+(𝜋∗ , pubvals ) such that the contract’s register() succeeds. By assumption A4 (soundness), the proof 𝜋∗ attests that the ZK circuit executed correctly on some witness
+(𝑐𝑒𝑟𝑡, ownership_sig, 𝑐ℎ𝑎𝑖𝑛, 𝑡, 𝐶𝑅𝐿, 𝑎𝑑𝑑𝑟, wallet_index, max_wallets). The circuit verifies:
+(a) The certificate chain terminates at a root CA whose hash is a member of the whitelisted
+CA Merkle tree (verified via caMerkleRoot). Since 𝒜 does not possess a valid certificate
+signed by a whitelisted CA, 𝒜 must either forge the CA’s signature — RSA (contradicting
+A3 via the hardness of factoring [25]) or ECDSA (contradicting A3 via the elliptic curve
+discrete logarithm assumption) — or find a second preimage/collision in the Merkle tree
+to substitute a different CA (contradicting A3 via SHA-256 collision resistance).
+(b) The ownership signature verifies under the certificate’s public key. Without the corresponding private key, 𝒜 cannot forge a valid signature — whether RSA (contradicting A3
+via factoring hardness) or ECDSA (contradicting A3 via ECDL hardness).
+In both cases, 𝒜’s success contradicts one of the assumptions. More precisely:
+
+forge
+
+Pr[Exp𝒜
+
+euf-cma
+
+= 1] ≤ Adv𝒜
+
+euf-cma
+
+(CA.Sig)+Adv𝒜
+
+col
+
+sound
+
+(User.Sig)+Adv𝒜 (ℋ)+Adv𝒜
+
+(SP1) ≤ negl(𝜆)
+
+where the four terms correspond to: (1) forging the CA’s chain signature, (2) forging the
+ownership signature, (3) finding a SHA-256 collision in the Merkle tree, and (4) breaking SP1
+soundness. □
+Theorem 2 (Unlinkability) Under assumptions A3 (EUF-CMA security of the signature
+scheme, SHA-256 collision resistance) and the zero-knowledge property of the SP1 proof system,
+zk-X509 satisfies unlinkability (Definition 2).
+Proof.
+The nullifier is 𝑛 = ℋ(nullifier_sig‖wallet_index), where nullifier_sig =
+Sign(sk, ℋ(”zk-X509-Nullifier-v2”‖contract_address‖chain_id)).
+The signature is computed using the certificate’s private key, which is known only to the certificate holder. The
+zero-knowledge property of the proof system ensures that both the signature and the certificate
+contents remain hidden.
+To link a nullifier to a specific certificate, 𝒜 must determine which nullifier_sig was used.
+𝒜 has three strategies:
+(a) Compute the signature directly. 𝒜 possesses the certificate (which is semi-public data
+shared during normal certificate usage) and thus knows the public key. However, computing nullifier_sig requires the private key. This reduces to the EUF-CMA security of
+euf-cma
+the signature scheme: Adv
+(Sig) ≤ negl(𝜆).
+(b) Extract from the proof. The ZK zero-knowledge property ensures that 𝜋 reveals
+nothing about nullifier_sig beyond what is already in the public values (which contain
+only ℋ(nullifier_sig‖wallet_index), not nullifier_sig itself).
+(c) Invert the hash. Recovering nullifier_sig from 𝑛 = ℋ(nullifier_sig‖wallet_index)
+requires breaking preimage resistance of SHA-256.
+
+26
+
+𝒜’s total advantage is bounded by:
+1
+euf-cma
+zk
+pre
+∣Pr[𝑏′ = 𝑏] − ∣ ≤ Adv𝒜
+(Sig) + Adv𝒜 (SP1) + Adv𝒜 (ℋ) ≤ negl(𝜆)
+2
+This is strictly stronger than a public-key-based nullifier (ℋ(cert.pk‖wallet_index)), which
+would be computable by anyone possessing the certificate. □
+Caveat. In the current implementation, caMerkleRoot replaces the direct caRootHash, so
+on-chain observers learn only that the certificate was issued by one of the whitelisted CAs —
+the specific CA is hidden by the Merkle membership proof (Section 3.12). This significantly
+enlarges the anonymity set in multi-national deployments. Furthermore, the signature-based
+nullifier ensures that even an adversary who independently obtains a user’s certificate (which
+contains the public key) cannot compute the nullifier — the private key is required to produce
+the deterministic nullifier_sig.
+Theorem 3 (Cross-Service Unlinkability) For any two IdentityRegistry contracts 𝐶1 and
+𝐶2 deployed at different addresses, an adversary observing the on-chain nullifiers 𝜈1 ∈ 𝐶1 and
+𝜈2 ∈ 𝐶2 cannot determine whether 𝜈1 and 𝜈2 were generated by the same user or by different
+users, except with negligible advantage.
+Under assumptions A3 (EUF-CMA security, SHA-256 preimage resistance), A4 (ZK soundness
+and zero-knowledge), and the following additional assumptions, zk-X509 satisfies cross-service
+unlinkability.
+Additional assumptions. We model ℋ (SHA-256) as a random oracle. We assume the
+signature scheme provides strong unforgeability (sEUF-CMA) and that the signature scheme
+is deterministic (RSA PKCS#1 v1.5 and ECDSA with RFC 6979), so distinct inputs produce
+distinct signatures.
+Proof. We proceed by a sequence of games.
+Game 0. The real experiment. The challenger 𝒞 generates two certificates (cert0 , 𝑠𝑘0 ) and
+(cert1 , 𝑠𝑘1 ), and flips a coin 𝑏 ∈ {0, 1}. 𝒞 registers user 𝑏 in both 𝐶1 and 𝐶2 , and user 1 − 𝑏 in
+neither. 𝒜 observes nullifiers 𝜈1 ∈ 𝐶1 and 𝜈2 ∈ 𝐶2 (both from user 𝑏) plus nullifiers from user
+1 − 𝑏 in unrelated registries, and outputs 𝑏′ .
+Game 1. Replace real ZK proofs with simulated proofs. By the zero-knowledge property of
+zk
+SP1, | Pr1 [𝑏′ = 𝑏]−Pr0 [𝑏′ = 𝑏]| ≤ Adv𝒜 (SP1). Now the proofs leak nothing about the witnesses.
+Game 2. We show that 𝜈1 and 𝜈2 are computationally independent even when generated by
+the same key. The nullifier for registry 𝐶𝑖 is:
+𝜈𝑖 = ℋ(Sign(𝑠𝑘𝑏 , ℋ(”zk-X509-Nullifier-v2”‖addr(𝐶𝑖 )‖chain_id𝑖 ))‖wallet_index)
+Since addr(𝐶1 ) ≠ addr(𝐶2 ), the domain inputs 𝑑1 ≠ 𝑑2 , producing distinct signatures 𝜎1 =
+Sign(𝑠𝑘𝑏 , 𝑑1 ) and 𝜎2 = Sign(𝑠𝑘𝑏 , 𝑑2 ). For 𝒜 to link 𝜈1 to 𝜈2 , 𝒜 must distinguish whether two
+hash outputs ℋ(𝜎1 ‖idx) and ℋ(𝜎2 ‖idx) share a common signing key. We reduce this to two
+sub-problems:
+(a) Recovering 𝜎𝑖 from 𝜈𝑖 . Since the adversary observes two independent nullifiers 𝜈1 =
+ℋ(𝜎1 ‖idx) and 𝜈2 = ℋ(𝜎2 ‖idx), recovering either 𝜎𝑖 requires inverting the random oracle
+pre
+on the corresponding input. Each inversion contributes Adv𝒜 (ℋ), yielding a combined
+pre
+bound of 2 ⋅ Adv𝒜 (ℋ) for both nullifiers.
+
+27
+
+(b) Linking 𝜎1 to 𝜎2 without recovering them. Even if 𝒜 could somehow relate the hash
+outputs without recovering the preimages, in the random oracle model ℋ(𝜎1 ‖idx) and
+ℋ(𝜎2 ‖idx) are independent random values as long as 𝜎1 ≠ 𝜎2 . Since the signing inputs
+𝑑1 ≠ 𝑑2 and the signature scheme is deterministic (RSA PKCS#1 v1.5, ECDSA with
+RFC 6979), the signatures are distinct with overwhelming probability. In the random
+oracle model, the outputs reveal no information about any algebraic relationship between
+𝜎1 and 𝜎2 , rendering correlation impossible without preimage recovery.
+Combining all transitions:
+1
+zk
+pre
+∣Pr[𝑏′ = 𝑏] − ∣ ≤ Adv𝒜 (SP1) + 2 ⋅ Adv𝒜 (ℋ) ≤ negl(𝜆)
+2
+where the factor of 2 accounts for the two independent hash inversions required. The random
+oracle model ensures that hash outputs on distinct inputs are independent, eliminating the need
+for a separate key-privacy assumption. □
+Theorem 4 (Cross-Chain Replay Resistance)
+cepted on chain 𝑐2 ≠ 𝑐1 .
+
+A valid proof for chain 𝑐1 cannot be ac-
+
+Under assumptions A1 (local security), A3 (EUF-CMA security), and A4 (ZK soundness),
+zk-X509 satisfies cross-chain replay resistance.
+Proof. Suppose 𝒜 observes a valid registration transaction (𝜋, pubvals) on chain 𝑐1 and attempts to replay or adapt it for acceptance on chain 𝑐2 where 𝑐2 ≠ 𝑐1 . We enumerate all
+strategies:
+(a) Direct replay. 𝒜 submits the identical (𝜋, pubvals) on 𝑐2 . The public values contain
+chainId = 𝑐1 . The smart contract on 𝑐2 verifies pubvals.chainId == block.chainid. Since
+block.chainid = 𝑐2 ≠ 𝑐1 , the check fails deterministically. The proof 𝜋 is never evaluated.
+′
+
+(b) Modify public values. 𝒜 constructs pubvals with chainId = 𝑐2 while reusing the orig′
+inal proof 𝜋. The SP1 verifier checks SP1Verifier.verifyProof(vkey, pubvals , 𝜋). Since 𝜋
+was generated as a proof of correct execution with committed outputs pubvals (containing
+′
+chainId = 𝑐1 ), and pubvals ≠ pubvals, the proof verification fails by the soundness of the
+SP1 proof system (A4). Formally:
+sound
+
+′
+
+Pr[SP1Verifier.verify(vkey, pubvals , 𝜋) = true] ≤ Adv𝒜
+
+(SP1) ≤ negl(𝜆)
+
+(c) Generate a new proof for 𝑐2 . 𝒜 attempts to produce a fresh proof 𝜋′ that commits
+chainId = 𝑐2 . The ZK circuit requires a valid ownership signature over the challenge
+ℋ(serial‖addr‖wallet_index‖𝑡‖𝑐2 ). This challenge differs from the original (which used
+𝑐1 ). By A1, 𝒜 does not possess the user’s private key 𝑠𝑘. Forging a valid signature on
+this new challenge reduces to breaking EUF-CMA security:
+euf-cma
+
+Pr[forge ownership_sig for 𝑐2 ] ≤ Adv𝒜
+
+(Sig) ≤ negl(𝜆)
+
+Similarly, the nullifier signature domain includes the chain ID: ℋ(”zk-X509-Nullifier-v2”‖registry_addr‖𝑐2 ).
+Forging this signature adds a second EUF-CMA term.
+Combining all strategies:
+sound
+
+Pr[replay succeeds on 𝑐2 ] ≤ Adv𝒜
+
+euf-cma
+
+(SP1) + 2 ⋅ Adv𝒜
+
+28
+
+(Sig) ≤ negl(𝜆)
+
+where the factor of 2 accounts for the two independent signature forgeries (ownership and
+nullifier) required in strategy (c). □
+Theorem 5 (Double-Registration Resistance) Under assumption A4 (ZK soundness)
+and the determinism of the signature scheme (RSA PKCS#1 v1.5, ECDSA with RFC 6979),
+zk-X509 satisfies double-registration resistance (Definition 3).
+Proof. For a certificate with private key sk and wallet index 𝑖, the nullifier is deterministic: 𝑛𝑖 = ℋ(Sign(sk, ℋ(”zk-X509-Nullifier-v2”‖contract_address‖chain_id))‖𝑖). Since RSA
+PKCS#1 v1.5 and ECDSA with RFC 6979 are deterministic signature schemes, the same key
+always produces the same signature, and thus the same nullifier. The ZK circuit enforces 𝑖 <
+maxWalletsPerCert, limiting the number of distinct nullifiers per certificate. After a registration
+with nullifier 𝑛𝑖 succeeds, the contract sets nullifierOwner[n_i] = addr. Any subsequent attempt to register the same nullifier fails because nullifierOwner[n_i] != address(0). The
+total number of registrations per certificate is bounded by maxWalletsPerCert. □
+Theorem 6 (Front-Running Immunity) Under assumptions A1 (local security), A3 (EUFCMA security), and A4 (ZK soundness), zk-X509 satisfies front-running immunity (Definition
+4).
+Proof. The honest user’s proof 𝜋 commits registrant = addr_P as a public value. The
+contract verifies registrant == msg.sender. 𝒜 has two strategies:
+(a) Replay the proof. 𝒜 submits (𝜋, pubvals) from addr𝐴 . Since pubvals contains
+registrant = addr_P and msg.sender = addr𝐴 ≠ addr𝑃 , the registrant check fails.
+(b) Modify pubvals. 𝒜 changes registrant to addr𝐴 in the public values. Since pubvals
+is an input to SP1Verifier.verifyProof(), altering it invalidates the proof verification
+(the proof was generated for the original public values).
+(c) Generate a new proof. 𝒜 would need 𝑠𝑘 to generate the required ownership_sig and
+nullifier_sig for a proof binding to addr𝐴 . By A1, 𝒜 does not have 𝑠𝑘.
+All strategies fail. □
+Theorem 7 (CA-Membership Hiding) Under assumption A4 (ZK soundness) and the
+zero-knowledge property of the SP1 proof system, zk-X509 satisfies CA-membership hiding (Definition 5). This property holds in the ideal ZK model; side-channel attacks on the prover’s
+execution environment (e.g., timing variations correlated with certificate size) are outside the
+scope of this model and apply equally to all ZK-based identity systems.
+Proof. The ZK circuit computes caRootHash = ℋ(pkroot ) and verifies a Merkle membership
+proof against the provided ca_merkle_root. Only the Merkle root 𝑀 is committed as a public
+value; neither the leaf caRootHash nor the Merkle proof path appears in the public outputs.
+By the zero-knowledge property of SP1, the proof 𝜋 reveals nothing beyond the truth of the
+statement — specifically, it does not reveal which leaf was used. 𝒜 observes only 𝑀 (the Merkle
+root) and 𝜋. Since 𝑀 is identical regardless of which CA𝑏 issued the certificate, 𝒜’s only strategy
+is to extract information from 𝜋. By the ZK property, 𝜋 is computationally indistinguishable
+from a simulated proof, so 𝒜 gains no advantage:
+1
+zk
+∣Pr[𝑏′ = 𝑏] − ∣ ≤ Adv𝒜 (SP1) ≤ negl(𝜆)
+2
+zk
+
+where Adv
+
+is the advantage of distinguishing real proofs from simulated ones. □
+29
+
+Remark. If the deployment whitelists only a single CA (e.g., only Korean NPKI), CAmembership hiding is trivially satisfied (anonymity set = 1, but no information is revealed
+beyond what is already public). The property becomes meaningful in multi-national deployments with 𝑛 ≥ 2 CAs.
+Theorem 8 (Non-Transferability) Under assumptions A1 (local security), A3 (cryptographic hardness), and A4 (ZK soundness), zk-X509 satisfies non-transferability (Definition
+6).
+Proof. For 𝒜 to register using 𝒫’s certificate without 𝒫’s cooperation, 𝒜 must produce a valid
+proof 𝜋∗ whose witness includes:
+(a) An ownership signature ownership_sig that verifies under 𝒫’s public key for a challenge
+binding 𝒜’s address: Sig.Verify(cert.pk, ℋ(serial‖addr𝐴 ‖wallet_index‖𝑡‖chain_id), ownership_sig).
+Without 𝒫’s private key, forging this signature contradicts A3 (EUF-CMA security of
+RSA/ECDSA).
+(b) A nullifier signature nullifier_sig that verifies under 𝒫’s public key: Sig.Verify(cert.pk,
+ℋ(“zk-X509-Nullifier-v2”‖contract_addr‖chain_id), nullifier_sig). Again, forging this
+without the private key contradicts A3.
+By A1, 𝒜 cannot extract these signatures from 𝒫’s machine. By A4, 𝒜 cannot produce a valid
+proof with an invalid witness. Therefore 𝒜 cannot register using 𝒫’s certificate:
+transfer
+
+Pr[Exp𝒜
+
+euf-cma
+
+= 1] ≤ 2 ⋅ Adv𝒜
+
+sound
+
+(Sig) + Adv𝒜
+
+(SP1) ≤ negl(𝜆)
+
+where the factor of 2 accounts for the two independent signature forgeries required (ownership
+and nullifier). □
+
+5.5
+
+Additional Attack Analysis
+
+5.5.1
+
+Timestamp Manipulation
+
+Attack. The prover supplies a false timestamp to make an expired certificate appear valid.
+Mitigation.
+The timestamp is committed as a public value and verified on-chain:
+- proofTimestamp � block.timestamp (rejects future proofs) - block.timestamp proofTimestamp � maxProofAge (rejects stale proofs; default 1 hour, adjustable 5 min–
+24 hours)
+This bounds the manipulation window to maxProofAge, insuﬀicient to exploit typical certificate
+validity periods of 1+ years. An adversary would need to advance the blockchain’s clock, which
+requires controlling block production—infeasible on Ethereum’s proof-of-stake consensus.
+5.5.2
+
+CRL Integrity and Freshness
+
+The CRL is verified trustlessly inside the zkVM: its signature (RSA or ECDSA) is checked
+against the issuing CA’s public key, and its temporal validity (thisUpdate ≤ 𝑡 ≤ nextUpdate)
+is enforced. This prevents two attacks:
+• Forged CRL: 𝒜 cannot supply a CRL not signed by the legitimate CA (signature verification inside zkVM).
+• Stale CRL: 𝒜 cannot supply an expired CRL (freshness check inside zkVM).
+Residual limitation. The host selects which valid CRL to provide. If the CA has issued a
+newer CRL revoking the user’s certificate, a malicious host could still provide the older (but still
+30
+
+temporally valid) CRL that does not yet contain the revocation. This is bounded by the CRL’s
+validity window (typically 24–72 hours for Korean NPKI). The CRL data is not committed to
+public values, so on-chain consumers cannot independently verify which CRL was used. For
+stronger guarantees, a CRL oracle (Section 7.2) could maintain an on-chain Merkle root of
+revoked serials.
+Host-Provided but Cryptographically Authenticated CRL. While the CRL’s cryptographic integrity is verified inside the zkVM (CA signature and temporal validity), CRL freshness ultimately depends on the host providing the latest CRL from the CA’s distribution point.
+This creates an Omission Attack vector: a prover whose certificate has been revoked can
+deliberately supply a stale—but still temporally valid per nextUpdate—CRL that predates the
+revocation entry. The maximum attack window equals the CRL update period, which is typically 24 hours for most CAs (up to 72 hours for some Korean NPKI CAs). During this window,
+a revoked certificate holder can still generate valid proofs. For production deployments requiring immediate revocation, we recommend two complementary mitigations: (1) an on-chain
+CRL oracle (Section 7.2) that maintains a Merkle root of revoked serials updated by a trusted
+operator or DAO, enabling the circuit to commit the CRL Merkle root as a public value; and (2)
+the existing revokeIdentity() admin function, which provides immediate on-chain revocation
+independent of CRL propagation delays.
+5.5.3
+
+Private Key Isolation
+
+Architecture. The private key never enters the zkVM or the prover’s general process memory. The signature-based ownership scheme (Section 3.4) delegates all private key
+operations to the OS keychain:
+1. The prover application requests a signature from the OS keychain (macOS Security.framework, Windows CNG). The user authenticates via the OS-level prompt (e.g.,
+password dialog or Touch ID).
+2. The OS keychain signs the ownership challenge: ℋ(serial‖registrant‖wallet_index
+‖timestamp‖chain_id).
+3. Only the resulting signature bytes are returned to the prover process and passed to the
+SP1 zkVM as input.
+4. The private key never leaves the OS keychain and never enters general process memory.
+Security properties: - The private key never appears in any HTTP request or response. - The
+private key never enters the SP1 RISC-V virtual machine. - On devices with hardware-backed
+keystores (macOS Secure Enclave, Windows TPM), the private key may never exist in general
+process memory at all — the signing operation occurs within the secure hardware. No Debug
+derive on key-holding structs; API access restricted to authenticated requests.
+This provides a stronger security model in the dimension of private key exposure compared to
+approaches that import the private key directly into the ZK circuit, and exceeds the trust model
+of standard certificate-using software (e.g., web browsers performing TLS client authentication).
+5.5.4
+
+Smart Contract Security
+
+• Reentrancy. The register() function performs all validation checks and the external
+verifyProof() call before updating state. While the state updates occur after the external call, verifyProof is a pure verification function that either returns successfully
+or reverts—it has no callback mechanism or state-modifying side effects. The verifier
+contract (ISP1Verifier) is immutably set at deployment, preventing substitution with a
+malicious contract.
+
+31
+
+• Access control. Administrative functions (addCA, addCAs, removeCA, updateCaMerkleRoot,
+updateCrlMerkleRoot, revokeIdentity, setMaxProofAge, pause, unpause) are protected by the onlyOwner modifier.
+Ownership transfer uses a two-step pattern
+(transferOwnership → acceptOwnership) to prevent accidental transfers.
+• Emergency stop. The pause() function halts all registrations, providing an escape
+hatch if a critical vulnerability is discovered.
+• Integer overflow. Solidity ^0.8.x provides built-in overflow/underflow checks.
+5.5.5
+
+Voluntary Credential Sharing
+
+Attack. A certificate holder voluntarily shares their private key or pre-computed signatures
+(ownership_sig, nullifier_sig) with a third party, enabling the third party to generate valid
+proofs and register under the original certificate.
+Scope. This is a fundamental limitation shared by all credential-based identity systems, including DID/VC, zkPassport, and even biometric systems (where liveness detection can be
+circumvented). No cryptographic mechanism can prevent a willing user from delegating their
+credential usage.
+Analysis of the zk-X509 attack surface. Compared to other systems, zk-X509 offers partial
+mitigation:
+1. Signature sharing (limited delegation). If the user shares only ownership_sig and
+nullifier_sig (not the private key), the third party can register once but cannot generate
+new proofs for different registries, timestamps, or wallet indices. The delegation is scoped
+to the specific parameters embedded in the signatures.
+2. Private key sharing (full delegation). If the user shares the private key itself, the
+third party gains full control. However, NPKI private keys are tied to real-world identity
+with legal consequences — sharing a Korean NPKI certificate constitutes a criminal offense
+under the Electronic Signatures Act, creating a legal deterrent absent in pseudonymous
+systems.
+3. Economic disincentives. In Sybil-resistant contexts (e.g., DAO voting), the economic
+value of one additional identity is bounded by the per-identity reward. If the cost of
+obtaining a fraudulent certificate (legal risk, social engineering) exceeds this value, rational
+actors will not engage in credential sharing.
+4. Comparison with other systems. Worldcoin’s biometric approach theoretically prevents sharing (one cannot share an iris), but faces practical circumvention via coerced enrollment. DID systems face the same voluntary sharing problem as zk-X509. Certificatebased systems with legal backing (X.509, eID) arguably have stronger deterrents than
+purely cryptographic credentials due to the legal liability attached to the credential.
+Open problem. Fully preventing voluntary credential sharing while maintaining privacy remains an open problem in the identity literature. Hardware-bound credentials (e.g., certificates
+stored in smart cards with non-exportable keys) offer a partial solution at the cost of hardware
+dependency — precisely the constraint zk-X509 is designed to avoid.
+
+5.6
+
+Privacy Properties Summary
+
+Property
+
+Status
+
+Guarantee
+
+Certificate subject (name, ID)
+Certificate serial number
+
+Hidden
+Hidden
+
+ZK zero-knowledge property
+Not used in nullifier; hidden by
+ZK
+32
+
+Property
+
+Status
+
+Guarantee
+
+Certificate public key
+
+Not linkable to nullifier
+
+Certificate attributes (C, O,
+OU, CN)
+Identity expiry
+
+User-controlled
+
+Private key
+
+Never enters zkVM
+
+CA identity
+
+Hidden
+
+Wallet-to-certificate link
+Proof-to-address binding
+Double registration
+Non-transferability
+
+Unlinkable
+Enforced
+Prevented
+Enforced (without
+cooperation)
+Prevented
+
+Signature-based nullifier requires
+private key
+Disclosed only if user sets
+disclosure_mask bit
+notAfter committed; verifiedUntil
+expires on-chain
+Signature-based ownership; OS
+keychain isolation
+caMerkleRoot hides which CA;
+Merkle membership proof
+(Section 3.12)
+Theorem 2
+Theorem 6
+Theorem 5
+Theorem 8; voluntary delegation
+is a universal credential limitation
+verifiedUntil mapping
+
+Multiple certs per wallet
+
+6
+
+Automatic
+
+Comparison with Alternative Approaches
+
+Criterion
+
+zk-X509
+
+DID/VC
+[26]
+
+Privacy
+
+Full ZK
+
+Varies
+
+Trust issuer
+Verifiability Onchain,
+trustless
+Hardware
+None
+None
+required
+Trust
+GovernmentNew issuers
+anchor
+CAs
+Existing
+Billions
+Must build
+infrastrucof certs
+new
+ture
+Revocation Trustless Issuer
+CRL in
+registry
+ZK
+Regulatory Legally
+Unresolved
+standing
+binding
+Time to
+3–6
+3–5 years
+deploy
+months
+FrontRegistrant N/A
+running
+binding
+defense
+
+zkKYC
+
+SBT [22]
+
+zkPassport [33]
+
+zk-email [32]
+
+Attestor Issuer
+sees data
+sees
+data
+Trust
+Trust
+issuer
+attestor
+None
+None
+
+Full ZK
+
+Full ZK
+
+On-chain,
+trustless
+
+On-chain,
+trustless
+
+NFC reader
+
+None
+
+KYC
+Token
+provider issuer
+Requires Requires
+provider issuer
+
+Government
+NFC passport
+
+Email
+providers
+DKIM email
+
+Offchain
+
+N/A
+
+N/A
+
+Issuer
+policy
+
+Provider- None
+dependent
+Months Months
+
+Legally binding
+
+None
+
+Months
+
+Months
+
+N/A
+
+Varies
+
+Varies
+
+N/A
+
+zk-X509’s unique position is the combination of no hardware requirement, governmentgrade trust with full certificate chain verification, trustless revocation checking, immedi33
+
+ate deployability (no new issuance infrastructure), legal standing under existing regulations,
+and full zero-knowledge privacy, leveraging an infrastructure base of billions of existing certificates.
+
+6.1
+
+Quantitative Comparison
+
+zk-X509 measurements were taken on macOS Apple Silicon. Other systems’ values are from
+their published documentation where available.
+Metric
+
+zk-X509
+
+zk-email
+
+Polygon ID
+
+Semaphore
+
+zkPassport
+
+Worldcoin
+
+ZK
+SP1
+BackzkVM
+end
+(RISC-V)
+Constraints
+11.8M
+/
+cycles
+Cycles
+(P-256)
+
+Circom +
+Groth16
+
+Circom +
+Groth16
+
+Circom +
+Groth16
+
+Noir (Ultra
+Honk)
+
+∼150K
+constraints
+(est.)
+
+N/A
+
+Semaphore
+(zkSNARKs)
+N/A
+
+Not
+reported
+
+Not reported
+
+Not
+reported
+
+Required
+
+Required
+
+Universal
+(Ultra Honk)
+
+N/A
+
+∼500K
+(verification,
+docs)
+None
+
+∼300K
+(est.)
+
+∼200K
+(est.)
+
+None
+
+∼300K–
+500K (est.
+Ultra Honk)
+NFC reader
+
+DID only
+
+None
+(custom)
+
+Passport/eID None
+chip
+
+New DID
+issuers
+Selective
+disclosure
+
+None
+
+Passport/eID Biometric
+
+Group
+membership
+No
+
+Full ZK
+(selective
+disclosure)
+Partial (chip
+signs
+externally)
+
+1.26M
+∼100K–
+constraints 200K
+(meaconstraints
+sured)
+(est.)
+Not reported
+Not
+reported
+
+102s
+(CPU,
+multicore)
+Trusted Groth16: Required
+(perSetup
+circuitcircuit)
+specific
+ceremony
+(SP1
+Groth16
+CRS);
+PLONK:
+universal
+On∼300K
+∼300K
+Chain
+(est.
+(est.
+Gas
+Groth16) Groth16)
+HardwareNone
+None
+Required
+PKI
+Any
+DKIM
+X.509 CA (email
+Comonly)
+patibility
+CredentialGovernment Email
+Source
+PKI
+providers
+Privacy Full
+Partial
+Level
+(Merkle
+(reveals
+CA)
+domain)
+N/A (no
+Private Yes (key
+never in
+user
+Key
+circuit)
+private
+Isolakey; email
+tion
+content in
+circuit)
+Proof
+Generation
+
+No
+
+34
+
+Orb
+biometric
+
+Iris code
+
+N/A
+
+Metric
+
+zk-X509
+
+CrossYes
+DApp
+(contractUnlink- bound
+ability
+nullifier)
+CrossYes
+Chain
+(chain_id
+Replay in proof)
+Defense
+ImmediateYes
+De(existing
+ployacerts)
+bility
+
+zk-email
+
+Polygon ID
+
+Semaphore
+
+zkPassport
+
+Worldcoin
+
+No
+
+Yes
+
+Yes (groupscoped)
+
+Yes (scoped
+nullifier)
+
+No
+
+No
+
+No
+
+No
+
+Yes (chainId
+in
+BoundData)
+
+No
+
+Yes
+(existing
+email)
+
+No (new
+DID infra)
+
+Yes
+
+Partial
+(NFC)
+
+No (Orb)
+
+Key findings: - zk-X509 is the only system supporting any X.509 CA worldwide with full
+CA-membership hiding - zk-email has comparable on-chain cost but limited to DKIM email
+signatures (not government PKI) - Polygon ID requires building entirely new DID issuance
+infrastructure - zk-X509’s private key isolation is a an architectural advantage shared only
+with hardware-dependent systems like zkPassport (where the passport chip signs externally)
+— but zk-X509 achieves this without any specialized hardware - SP1 cycle count (11.8M)
+is higher than Circom constraint counts, but SP1 provides general-purpose programmability
+(Rust) vs. Circom’s DSL limitations
+
+7
+
+Limitations and Future Work
+
+7.1
+
+Client-Side Proving
+
+The current architecture runs the prover as a native application. While the private key never
+leaves the local machine (assumption A1), moving proof generation entirely into the browser via
+WebAssembly would eliminate even the inter-process transfer. SP1’s WASM support is under
+active development and would enable a fully browser-contained proving flow, strengthening the
+trust model.
+
+7.2
+
+On-Chain CRL Oracle
+
+The current implementation commits a crlMerkleRoot as a public value, and the smart contract
+validates it against a stored root (settable via updateCrlMerkleRoot()). This enables on-chain
+enforcement of CRL checking when a trusted operator maintains the CRL Sorted Merkle Tree.
+A further improvement would be a fully decentralized CRL oracle contract maintained by a
+DAO, automatically fetching and parsing CRLs from CA distribution points to update the
+on-chain root without centralized trust.
+
+7.3
+
+Multi-Signature Governance
+
+The single-owner access control for CA management represents a centralization point. Replacing
+it with a multi-signature wallet (e.g., Gnosis Safe) and timelock would distribute trust and
+prevent unilateral CA whitelist modifications. This is an engineering improvement that does
+not affect the core protocol.
+
+35
+
+7.4
+
+Cross-Chain Deployment
+
+zk-X509 supports multi-chain deployment — IdentityRegistry can be deployed on Ethereum,
+Polygon, Arbitrum, or any EVM-compatible chain with the same verification key. Users
+generate a separate proof per chain, each bound to the target chain’s chain_id and
+registry_address. Two privacy-by-design consequences follow from the domain separation in
+Section 3.2:
+1. Cross-chain replay resistance. The chain_id in the ownership challenge ensures a
+proof for Ethereum (chain_id=1) is rejected on Polygon (chain_id=137).
+2. Cross-chain unlinkability. The registry_address in the nullifier domain means different deployments produce different nullifiers for the same certificate. An observer cannot
+determine whether registrations on two chains belong to the same person — this is a
+deliberate privacy feature, not a limitation.
+If cross-chain identity linkage is desired (e.g., for unified reputation), the user can voluntarily
+reveal their nullifiers on both chains. However, this is an opt-in decision that the protocol does
+not enforce, preserving privacy by default.
+
+7.5
+
+OCSP Support
+
+The current implementation supports only Certificate Revocation Lists (CRLs) for revocation
+checking. Many modern CAs prefer the Online Certificate Status Protocol (OCSP, RFC 6960),
+which provides real-time, per-certificate revocation status rather than distributing a complete
+list of revoked serial numbers. OCSP offers two advantages over CRLs: (1) lower bandwidth
+— a single OCSP response (∼1KB) versus a full CRL that may contain thousands of entries
+(∼100KB–1MB), and (2) lower latency — OCSP responses are generated on demand rather
+than on a fixed schedule (typically 24–72 hours for CRLs).
+Integrating OCSP into the zkVM circuit presents a distinct challenge. Unlike CRLs, which are
+signed by the issuing CA and can be verified independently, OCSP responses are signed by
+an OCSP responder that may use a separate key authorized via the id-pkix-ocsp-nocheck
+extension. The zkVM would need to verify: (1) the OCSP response signature, (2) the responder’s
+certificate chain (potentially a separate chain from the user’s certificate), and (3) the response
+freshness (thisUpdate/nextUpdate). This approximately doubles the signature verification
+workload, adding ∼5.7M cycles for RSA-2048 or ∼3.9M for P-256.
+A pragmatic approach combines both mechanisms: CRL verification inside the zkVM (as currently implemented) for CAs that publish CRLs, supplemented by on-chain OCSP oracle integration for CAs that primarily use OCSP. The crlMerkleRoot on-chain validation mechanism
+already provides a framework for this — an OCSP oracle could maintain a Sorted Merkle Tree of
+revoked serial numbers derived from OCSP queries, with the root stored on-chain and validated
+during proof verification.
+
+7.6
+
+Formal Verification
+
+Formal verification of the Solidity smart contract (e.g., using Certora or Halmos) and the ZK
+circuit logic would provide stronger assurance beyond the game-based security analysis presented
+here.
+
+8
+
+Conclusion
+
+zk-X509 demonstrates that legacy PKI infrastructure can be bridged to blockchain identity systems without compromising user privacy. By executing full X.509 certificate chain verification—
+36
+
+including multi-level CA signature verification (RSA and ECDSA), temporal validity, trustless CRL checking, key ownership proof, registrant binding, configurable multi-wallet policy,
+and CA-anonymous Merkle verification—inside a zero-knowledge virtual machine, the system
+achieves on-chain verifiability with off-chain privacy. The self-service re-registration mechanism further ensures that users maintain sovereign control over their identity lifecycle without
+centralized admin dependencies.
+The signature-based ownership scheme ensures that the user’s private key never enters the ZK
+circuit or the prover’s general process memory—a stronger security model in the dimension of
+private key exposure than existing ZK identity systems. The CA Merkle tree design hides which
+specific CA issued the certificate, significantly enlarging the anonymity set in multi-national
+deployments. The security analysis under the Dolev-Yao model establishes eight properties
+with game-based definitions and proofs: unforgeability (reduced to EUF-CMA security and ZK
+soundness), unlinkability (reduced to EUF-CMA security and ZK zero-knowledge), cross-service
+unlinkability (reduced to random oracle preimage resistance and ZK zero-knowledge), crosschain replay resistance (via chain ID binding and ZK soundness), double-registration resistance
+(via deterministic nullifiers and ZK soundness), front-running immunity (via registrant binding),
+CA-membership hiding (via Merkle hiding and ZK zero-knowledge), and non-transferability
+(reduced to EUF-CMA security under the local security assumption). The implementation
+demonstrates practical feasibility: ∼11.8M SP1 cycles for single-level P-256 verification (∼17.4M
+for RSA-2048) and ∼300K gas for on-chain registration (Groth16).
+A key differentiator from DID-based approaches is immediacy: while DID frameworks require
+years to bootstrap new issuance infrastructure, zk-X509 leverages government-grade certificates
+that are already deployed and legally binding across multiple jurisdictions. The system supports
+simultaneous whitelisting of CAs from any nation—Korean NPKI (∼20M users), Estonian eID
+(∼1.3M e-residents), German eID, corporate PKI, and beyond—enabling a single deployment
+to serve a global user base without cross-border credential issuance. We believe this “bridge
+the existing, don’t build from scratch” philosophy represents a pragmatic and underexplored
+direction in the blockchain identity literature, complementary to rather than competing with
+DID-based systems.
+
+Availability
+Source code will be made publicly available at: https://github.com/tokamak-network/zk-X509
+
+Acknowledgments
+The authors acknowledge the use of large language models, specifically Claude, Gemini, and
+GitHub Copilot, for assistance in code review, implementation optimization, and editorial refinement of the manuscript.
+
+References
+[1] Mihir Bellare and Phillip Rogaway. Random oracles are practical: A paradigm for designing eﬀicient protocols. In Proceedings of the 1st ACM Conference on Computer and
+Communications Security (CCS), pages 62–73. ACM, 1993.
+[2] Marta Belles-Munoz, Miguel Isabel, Jose Luis Munoz-Tapia, Albert Rubio, and Jordi
+Baylina. Circom: A circuit description language for building zero-knowledge applications.
+IEEE Trans. Dependable Secure Comput., 20(6):4733–4751, 2023.
+
+37
+
+[3] Eli Ben-Sasson, Iddo Bentov, Yinon Horesh, and Michael Riabzev. Scalable, transparent,
+and post-quantum secure computational integrity. IACR ePrint 2018/046, 2018. https:
+//eprint.iacr.org/2018/046.
+[4] Eli Ben-Sasson, Alessandro Chiesa, Christina Garman, Matthew Green, Ian Miers, Eran
+Tromer, and Madars Virza. Zerocash: Decentralized anonymous payments from Bitcoin.
+In IEEE Symposium on Security and Privacy (S&P), pages 459–474. IEEE, 2014.
+[5] Eli Ben-Sasson, Alessandro Chiesa, Daniel Genkin, Eran Tromer, and Madars Virza.
+SNARKs for C: Verifying program executions succinctly and in zero knowledge. In Advances in Cryptology – CRYPTO 2013, volume 8043 of LNCS, pages 90–108. Springer,
+2013.
+[6] Maria Borge, Eleftherios Kokoris-Kogias, Philipp Jovanovic, Linus Gasser, Nicolas Gailly,
+and Bryan Ford. Proof-of-personhood: Redemocratizing permissionless cryptocurrencies.
+In IEEE European Symposium on Security and Privacy Workshops (EuroS&PW), pages
+23–26. IEEE, 2017.
+[7] Benedikt Bünz, Jonathan Bootle, Dan Boneh, Andrew Poelstra, Pieter Wuille, and Greg
+Maxwell. Bulletproofs: Short proofs for confidential transactions and more. In IEEE
+Symposium on Security and Privacy (S&P), pages 315–334. IEEE, 2018.
+[8] Vitalik Buterin. EIP-155: Simple replay attack protection. Ethereum Improvement Proposals, 2016. https://eips.ethereum.org/EIPS/eip-155.
+[9] Jan Camenisch and Anna Lysyanskaya. Signature schemes and anonymous credentials
+from bilinear maps. In Advances in Cryptology – CRYPTO 2004, volume 3152 of LNCS,
+pages 56–72. Springer, 2004.
+[10] David Chaum. Security without identification: Transaction systems to make big brother
+obsolete. Communications of the ACM, 28(10):1030–1044, 1985.
+[11] David Cooper, Stefan Santesson, Stephen Farrell, Sharon Boeyen, Russell Housley, and
+Tim Polk. Internet X.509 public key infrastructure certificate and certificate revocation
+list (CRL) profile. RFC 5280, IETF, May 2008.
+[12] Danny Dolev and Andrew Yao. On the security of public key protocols. IEEE Transactions
+on Information Theory, 29(2):198–208, 1983.
+[13] European Parliament and Council of the European Union. Regulation (EU) no 910/2014
+on electronic identification and trust services for electronic transactions in the internal
+market (eIDAS). Oﬀicial Journal of the European Union, July 2014.
+[14] Bryan Ford. Identity and personhood in digital democracy: Evaluating inclusion,
+equality, security, and privacy in pseudonym parties and other proofs of personhood.
+arXiv:2011.02412, 2020. https://arxiv.org/abs/2011.02412.
+[15] Ariel Gabizon, Zachary J. Williamson, and Oana Ciobotaru. PLONK: Permutations
+over lagrange-bases for oecumenical noninteractive arguments of knowledge. IACR ePrint
+2019/953, 2019. https://eprint.iacr.org/2019/953.
+[16] Shafi Goldwasser, Silvio Micali, and Charles Rackoff. The knowledge complexity of interactive proof systems. SIAM Journal on Computing, 18(1):186–208, 1989.
+[17] Shafi Goldwasser, Silvio Micali, and Ronald Rivest. A digital signature scheme secure
+against adaptive chosen-message attacks. SIAM Journal on Computing, 17(2):281–308,
+1988.
+
+38
+
+[18] Jens Groth. On the size of pairing-based non-interactive arguments. In Advances in Cryptology – EUROCRYPT 2016, volume 9666 of LNCS, pages 305–326. Springer, 2016.
+[19] Kobi Gurkan, Wei Jie Koh, and Barry WhiteHat. Semaphore: Zero-knowledge signaling on
+Ethereum. ZKProof Community Proposal, https://semaphore.pse.dev/whitepaper-v1.pdf,
+2020.
+[20] Ralph Merkle. A digital signature based on a conventional encryption function. In Advances
+in Cryptology – CRYPTO ’87, volume 293 of LNCS, pages 369–378. Springer, 1987.
+[21] National Assembly of the Republic of Korea. Electronic signatures act. Act No. 17354,
+2020. Amended 2020.
+[22] Puja Ohlhaver, E. Glen Weyl, and Vitalik Buterin. Decentralized society: Finding Web3’s
+soul. SSRN Working Paper 4105763, May 2022. https://papers.ssrn.com/sol3/papers.cf
+m?abstract_id=4105763.
+[23] Thomas Pornin. Deterministic usage of the Digital Signature Algorithm (DSA) and Elliptic
+Curve Digital Signature Algorithm (ECDSA). RFC 6979, IETF, August 2013.
+[24] RISC Zero Contributors. RISC Zero zkvm: General purpose verifiable computing. Technical Documentation, https://www.risczero.com/, 2023.
+[25] Ronald Rivest, Adi Shamir, and Leonard Adleman. A method for obtaining digital signatures and public-key cryptosystems. Communications of the ACM, 21(2):120–126, 1978.
+[26] Manu Sporny, Dave Longley, and David Chadwick. Verifiable credentials data model v2.0.
+W3C Recommendation, May 2025. https://www.w3.org/TR/vc-data-model-2.0/.
+[27] Manu Sporny, Dave Longley, Markus Sabadello, Drummond Reed, Orie Steele, and Christopher Allen. Decentralized identifiers (DIDs) v1.0. W3C Recommendation, July 2022.
+https://www.w3.org/TR/did-core/.
+[28] Succinct. SP1: A RISC-V zero-knowledge virtual machine. https://docs.succinct.xyz/,
+2024.
+[29] Tools for Humanity. World whitepaper. https://whitepaper.world.org/, July 2023.
+[30] Sean Turner, Daniel Brown, Kelvin Yiu, Russell Housley, and Tim Polk. Elliptic curve
+cryptography subject public key information. RFC 5480, IETF, March 2009.
+[31] U.S. Department of the Treasury. U.S. Treasury Sanctions Notorious Virtual Currency
+Mixer Tornado Cash. Oﬀice of Foreign Assets Control, August 2022.
+[32] zk-email Contributors. zk-email: Privacy-preserving email verification via zero-knowledge
+proofs. Technical Documentation, https://prove.email/, 2023.
+[33] zkPassport. zkPassport: Private unforgeable identity. Technical Report, https://zkpasspo
+rt.id/, 2024.
+
+39
+
+

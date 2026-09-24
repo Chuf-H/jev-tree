@@ -1,0 +1,2164 @@
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+1
+
+ZK-AMS: Credibly Anonymous Admission for Web
+3.0 Platforms via Recursive Proof Aggregation
+
+arXiv:2602.16130v2 [cs.NI] 15 Apr 2026
+
+Zibin Lin, Taotao Wang, Shengli Zhang, Long Shi, Boris Düdder, and Shui Yu
+
+Abstract—Web 3.0 platforms need an onboarding mechanism
+that can admit real users at scale without forcing them to reveal
+identity documents or pay one on-chain verification cost per
+user. Existing approaches typically rely on KYC-style disclosure,
+per-request on-chain verification, or trusted batching, making
+onboarding cost and latency difficult to predict under bursty
+demand. We present ZK-AMS, a credibly anonymous admission
+infrastructure that maps Personhood Credentials to anonymous
+on-chain Soul Accounts. Rather than introducing a new primitive,
+ZK-AMS composes zero-knowledge credential validation, permissionless batch submission, recursive proof aggregation, and
+anonymous post-admission account provisioning into one end-toend workflow. Its key design feature is a confidential batching
+pipeline in which admission instances of a common relation
+are folded off-chain under multi-key homomorphic encryption,
+allowing an untrusted batch submitter to coordinate aggregation without direct access to individual user witnesses during
+batching; the confidentiality scope is characterized explicitly in
+the security analysis. The resulting batch is settled on-chain with
+constant verification cost per batch rather than per admitted user.
+We implement ZK-AMS on an Ethereum testbed and evaluate
+admission throughput, end-to-end latency, gas consumption, and
+parameter trade-offs. Results show stable batch-verification gas
+across evaluated batch sizes, substantially lower amortized onchain cost than the non-recursive baseline, and practical costlatency trade-offs for high-concurrency onboarding in Web 3.0
+platforms.
+Index Terms—privacy-preserving admission, decentralized
+identity, zero-knowledge proofs, recursive proof aggregation,
+multi-key homomorphic encryption, anonymous account provisioning.
+
+I. I NTRODUCTION
+
+W
+
+EB 3.0 platforms are increasingly deployed as open,
+programmable computing environments, including
+DeFi systems, DAO governance, creator economies, and decentralized social applications [1]. In these platforms, user
+onboarding is not a peripheral feature but a platform-level
+primitive: the system must admit legitimate users, reject Sybil
+identities, and provision usable on-chain accounts under bursty
+and adversarial demand [2], [3]. This requirement becomes
+particularly challenging when a platform seeks credibly anonymous admission, namely, allowing users to remain anonymous
+Z. Lin, T. Wang and S. Zhang are with the College of Electronics and
+Information Engineering, Shenzhen University, Shenzhen 518052, China (email: linaacc9595@gmail.com; ttwang@szu.edu.cn; zsl@szu.edu.cn)
+L. Shi is with the School of Electronic and Optical Engineering, Nanjing
+University of Science and Technology, Nanjing 210094, China (e-mail:
+longshi@njust.edu.cn)
+B. Düdder is with the Department of Computer Science, University of
+Copenhagen, Copenhagen, Denmark (e-mail: boris.d@di.ku.dk)
+Shui Yu is with the School of Computer Science, University of Technology
+Sydney, Sydney, NSW 2007, Australia (e-mail: shui.yu@uts.edu.au)
+Corresponding author: Taotao Wang (e-mail: ttwang@szu.edu.cn).
+
+at the account level while still giving the platform a verifiable
+basis for uniqueness and policy enforcement.
+A practical Web 3.0 admission infrastructure should satisfy
+three requirements simultaneously: verifiable uniqueness, user
+anonymity, and predictable cost/latency under concurrent onboarding. Existing approaches typically satisfy only part of this
+design space. Soulbound-token-style identity signals improve
+accountability but do not provide protocol-level uniqueness
+guarantees [4]. KYC-style admission restores uniqueness but
+breaks privacy and introduces centralized bottlenecks [5].
+Zero-knowledge credential verification improves privacy, yet
+many designs still rely on per-request on-chain proof validation, causing admission cost to grow with the number of
+joiners [6], [7], [5]. More broadly, batching often reduces
+settlement overhead only by assuming a trusted coordinator or
+exposing intermediate witness material, while identity-oriented
+schemes usually stop at credential verification and do not
+address anonymous post-admission account provisioning.
+Beyond this high-level tension, Web 3.0 admission introduces three concrete obstacles. Prior work on decentralized
+computation, privacy protection, anonymous endorsement, and
+privacy-preserving blockchain processing suggests that decentralization, privacy, and public verifiability must often be
+engineered jointly rather than optimized in isolation [8], [9],
+[10]. In our setting, this means that admission requests must
+share a common verification relation for sound batch processing, a permissionless batch coordinator should aggregate requests without direct access to user witnesses during batching,
+and admission must be followed by anonymous but policycompliant account provisioning. Together, these requirements
+make Web 3.0 admission a systems problem rather than a
+standalone credential-verification problem.
+This paper presents ZK-AMS (Zero-Knowledge Admission
+Mapping System), a platform-level admission infrastructure
+that maps Personhood Credentials [11] to anonymous onchain accounts while preserving verifiable uniqueness. The
+core challenge is to achieve four properties simultaneously:
+batching that limits witness exposure against an untrusted
+Permissionless Batch Submitter (PBS) under explicit prototype assumptions, constant-cost on-chain settlement per batch,
+verifiable uniqueness rooted in real-world personhood credentials, and anonymous yet enforceable account provisioning. ZK-AMS addresses these challenges by combining zeroknowledge credential validation, Nova-style recursive proof
+aggregation [12], BGV-style multi-key homomorphic encryption [13], [14], and linkable ring signatures [15] into a single
+end-to-end workflow.
+A preliminary version of part of this work appeared as zk-
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+BID in WWW’25 [16], focusing on single-admission identityto-account binding via PHC-based Groth16 zero-knowledge
+verification and linkable ring signature based anonymous SoulAccount certification, together with prototype measurements
+of Groth16 and linkable ring signature costs. The present
+journal version retains that binding mechanism but extends
+it to a scalable Web 3.0 admission infrastructure by adding
+common-relation recursive aggregation, permissionless encrypted off-chain batching under an untrusted PBS, batchoriented proof finalization and constant-cost settlement, and
+expanded system/security analysis with end-to-end evaluation.
+Since the conference version did not include permissionless
+batching, encrypted witness folding, batch-level settlement, or
+the present end-to-end system analysis, this journal version
+should be understood as a system-level extension rather than
+a simple experimental expansion.
+The main technical contributions of this paper are summarized as follows:
+1) A common-relation admission formulation for scalable Web 3.0 onboarding: We formulate Web 3.0
+admission as a committed relaxed rank-1 constraint system (R1CS) relation, namely a Nova-compatible relaxed
+R1CS admission relation whose witness-bearing vectors
+are represented to the batching layer through public
+commitments, thereby binding Personhood Credential validity, holder ownership, and public admission inputs into
+homogeneous admission instances suitable for recursive
+aggregation.
+2) A recursive batching workflow with explicitly scoped
+confidentiality under an untrusted PBS: We design a
+permissionless off-chain batching mechanism in which
+admission instances of the same relation are recursively
+folded over MKHE ciphertexts, while transcript-bound
+Fiat–Shamir challenges and public commitments preserve
+batch consistency without giving the batch coordinator
+direct access to individual user witnesses during batching;
+the precise confidentiality scope is stated in Section V.
+3) A batch-settled admission and anonymous provisioning architecture: We couple recursive batch settlement
+with a post-admission account-provisioning stage based
+on linkable ring signatures, so that the platform enforces
+one-to-one use of admitted identities while preserving
+account-level anonymity.
+4) An implementation-driven evaluation of cost, latency,
+and deployment trade-offs: We implement ZK-AMS
+on an Ethereum testbed and evaluate proof-generation
+cost, batch-settlement gas, end-to-end onboarding latency,
+and confidential-folding overhead, showing substantially
+improved amortized admission efficiency over the nonrecursive baseline.
+The remainder of this paper is organized as follows. Section II reviews the technical building blocks. Section III
+presents the system architecture and operational model. Section IV details the ZK-AMS workflows. Section V analyzes
+security and operational risks. Section VI presents the implementation and experimental evaluation. Section VII discusses
+related work, and Section VIII concludes the paper.
+
+2
+
+II. T ECHNICAL B UILDING B LOCKS
+ZK-AMS combines four standard components: PHCs as
+the off-chain uniqueness root, Nova-style recursive folding
+for batch compression, MKHE for witness-protected off-chain
+batching under the stated prototype assumptions, and MLSAGS for anonymous post-admission account provisioning.
+This section states only the architectural role of each component; formal definitions and protocol specifics are deferred to
+Appendices A, B, and C.
+A. Personhood Credentials (PHCs)
+A Personhood Credential (PHC) [11] certifies that its holder
+corresponds to a unique human. In ZK-AMS, it provides the
+off-chain uniqueness root: the user proves in zero knowledge
+that the PHC is valid and correctly bound to the public
+admission input, without exposing identity attributes on-chain.
+B. Recursive Proof Aggregation via Nova Folding
+Nova-style folding [12] compresses many admission instances of the same relation into one accumulated instance, so
+chain-side verification is paid once per batch rather than once
+per user. ZK-AMS uses this mechanism as the main scalability
+lever for high-concurrency onboarding; Appendix A gives the
+extended folding equations used in the system.
+C. Off-Chain Folding with Explicitly Scoped Confidentiality
+via Multi-Key Homomorphic Encryption
+Recursive aggregation alone is insufficient if the batch
+coordinator can inspect witness data. ZK-AMS therefore performs the folding-relevant computations on BGV-style MKHE
+ciphertexts [13], [14], so the PBS coordinates batching over
+ciphertexts and public commitments rather than individual
+plaintext witnesses. Only the randomized folded batch state
+needed for proof finalization is collaboratively revealed at
+batch end, and the exact confidentiality scope is stated in
+Section V and Appendix B.
+D. Anonymous Account Provisioning via Linkable Ring Signatures
+After batch admission, an admitted user still needs an
+operational account. ZK-AMS uses MLSAGS [15], together
+with the broader line of ring-signature techniques [17], [18],
+to let a user bind a fresh Soul Account to the admitted seed
+identity anonymously while a deterministic key image prevents
+repeated provisioning attempts. Appendix C summarizes the
+MLSAGS interface and the key-image mechanism used in this
+provisioning step.
+E. Architectural Role of the Building Blocks
+In ZK-AMS, PHCs provide the off-chain uniqueness root,
+Nova compresses homogeneous admission batches, MKHE
+limits witness exposure during batching under the stated
+prototype assumptions, and MLSAGS enables anonymous but
+enforceable post-admission provisioning. The contribution of
+ZK-AMS is therefore the system integration of these components into a Web 3.0 admission workflow with predictable
+batch settlement, rather than a new cryptographic primitive.
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+3
+
+Fig. 1: ZK-AMS platform architecture and admission workflow: (1) client-side credential processing; (2) confidential off-chain batch
+aggregation over IPFS/IPNS; (3) PBS proof finalization; (4) on-chain batch admission; and (5) anonymous account provisioning via the
+Soul Registry.
+
+III. S YSTEM A RCHITECTURE AND O PERATIONAL M ODEL
+ZK-AMS (Zero-Knowledge Admission Mapping System)
+is a platform-level onboarding infrastructure for Web 3.0
+environments that maps a real-world uniqueness credential
+to a credibly anonymous on-chain account without per-user
+on-chain verification. The provisioned account is termed a
+Soul Account. Fig. 1 summarizes the end-to-end architecture,
+spanning a client-side credential layer, an off-chain batching
+layer with explicitly scoped confidentiality, and an on-chain
+settlement and provisioning layer.
+A. Architectural Roles and Data Planes
+ZK-AMS separates an off-chain data/compute plane from
+an on-chain settlement plane. The main roles are:
+• Users: Each user holds a PHC, transforms it into a
+privacy-preserving admission credential, participates in
+encrypted off-chain batching, and later provisions a Soul
+Account after successful admission.
+• Permissionless Batch Submitter (PBS): Any node may
+act as the PBS by collecting the public off-chain transcript, obtaining the folded admission material, generating the succinct proof, and submitting the batch to the
+blockchain. The PBS is not trusted with individual user
+witnesses.
+• On-chain contracts: A Verifier Contract validates the
+batch proof and records admission anchors, such as
+PHC hashes and seed public keys, to prevent duplicate
+registration. A Soul Registry Contract verifies anonymous
+account binding and enforces one-to-one provisioning
+through key-image uniqueness.
+• Off-chain transcript layer: Intermediate batching artifacts, including encrypted folding state, public commitments, and decryption shares, are stored on IPFS [19]
+
+and discovered via IPNS [20]. Only compact settlement
+anchors are posted on-chain.
+This separation keeps cryptographic and batching complexity off-chain while reserving public verifiability and policy
+enforcement for the chain. As a result, ZK-AMS treats admission as a scalable computing workflow rather than a per-user
+smart-contract verification task.
+B. Admission Relation and Batch Semantics
+All admissions in a batch correspond to the same admission relation. Let Radm denote the committed relaxed R1CS
+relation capturing PHC validity, holder ownership, and publicinput binding. Each user locally transforms a registration
+request into an instance–witness pair (Ii , Wi ) ∈ Radm ,
+where the public instance contains commitments and public
+admission inputs, and the witness contains the corresponding
+openings and private credential material.
+The batching process is therefore homogeneous: it aggregates many instances of the same admission relation rather
+than heterogeneous statements. This is required because recursive folding preserves consistency only when all folded
+instances belong to a common relation. Operationally, a batch
+is a set of admission requests sharing the same circuit, public
+system parameters, and verification semantics.
+C. Admission Lifecycle
+ZK-AMS executes the following five-phase admission lifecycle, detailed in Section IV.
+1) Client-side credential processing: The user converts
+a PHC into an admission credential in committed
+instance–witness form and generates a seed key pair.
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+2) Confidential off-chain batch aggregation: Users upload encrypted folding artifacts to the off-chain transcript layer and collaboratively update the batch accumulator without revealing individual witnesses.
+3) Proof finalization: The PBS reconstructs the folded
+batch material required for final proof generation and
+produces a single succinct batch proof.
+4) On-chain batch admission: The PBS submits the batch
+proof and compressed batch input list to the Verifier
+Contract, which settles the batch and records the admission anchors.
+5) Anonymous account provisioning: Each admitted user
+binds a fresh Soul Account to the admitted seed identity
+through a linkable ring signature, and the Soul Registry
+Contract enforces one-to-one provisioning.
+This lifecycle turns onboarding into a reusable batch workflow: uniqueness is checked once, settlement is amortized, and
+account provisioning remains anonymous but enforceable.
+D. Cost- and Capacity-Predictable Admission Model
+From a computing-systems perspective, the main objective
+of ZK-AMS is not only privacy and uniqueness, but also
+operator-visible predictability in settlement cost and onboarding latency. In non-recursive designs, admitting N users requires verifying N independent proofs on-chain, so the total
+settlement cost grows linearly:
+Ctotal (N ) = N × (Cverif y + Cstore ),
+
+(1)
+
+where Cverif y is the gas cost of verifying one proof and Cstore
+captures per-user state updates. This linear behavior makes
+bursty onboarding events difficult to budget and provision.
+ZK-AMS instead settles N admissions using a single batch
+proof. The amortized chain-side cost per admitted user becomes
+Cverif yF olded + Coverhead
++ CstateU pdate . (2)
+Cuser (N ) =
+N
+where Cverif yF olded is the cost of verifying one folded batch
+proof, Coverhead captures batch-level submission overhead,
+and CstateU pdate is the per-user admission-state update cost.
+As N increases, the fixed verification cost is shared across
+more users, and the amortized settlement cost approaches the
+minimum cost of a simple state update.
+Admission latency exhibits the opposite trade-off. A larger
+batch reduces amortized on-chain cost, but also increases
+waiting, aggregation, and proving delay. At a high level, the
+end-to-end batch latency can be decomposed as
+Tbatch (N ) = Twait (N )+Tagg (N )+Tprove (N )+Tchain , (3)
+where Twait (N ) is the time needed to accumulate a batch,
+Tagg (N ) is the off-chain aggregation time, Tprove (N ) is
+the PBS proof-finalization time, and Tchain is the on-chain
+settlement delay. Equations (2) and (3) together provide a
+practical configuration interface for platform operators: larger
+batches reduce per-user settlement cost, while smaller batches
+reduce onboarding delay.
+This operational model distinguishes ZK-AMS from perrequest admission schemes. Instead of forcing operators to pay
+
+4
+
+and provision linearly with the number of joiners, ZK-AMS
+exposes an explicit batch-size knob for balancing throughput,
+latency, and cost under high-concurrency onboarding.
+
+IV. ZK-AMS A DMISSION AND P ROVISIONING
+W ORKFLOWS
+This section specifies the end-to-end admission and provisioning workflow of ZK-AMS. Following Section III, the
+workflow consists of five phases: client-side credential processing, confidential off-chain batch aggregation, proof finalization, on-chain batch admission, and anonymous account
+provisioning. Together, these phases map a real-world uniqueness credential to an operational Soul Account.
+All batched requests correspond to the same admission
+relation Radm . Hence, the off-chain aggregation phase folds a
+homogeneous sequence of committed relaxed R1CS instances
+rather than heterogeneous statements, which is essential to the
+soundness and operational simplicity of batch settlement.
+
+A. Phase I: Client-Side Credential Processing
+This phase converts a Personhood Credential (PHC) into a
+machine-verifiable admission instance while keeping privacysensitive processing on the user side. The PHC contains the
+holder public key, the issuer public key, and the issuer signature, denoted by pkholder , pkissuer , and sigissuer , respectively.
+The user forms a witness–public-input pair for the
+admission relation, where W = PHC and x =
+{hashPHC , sigholder , pkissuer }. Here, hashPHC is the credential
+hash, and sigholder is the holder signature on hashPHC under
+the secret key corresponding to pkholder . The admission relation
+enforces the following three conditions:
+(i) x.hashPHC = Hash(Canon(W ))
+(ii) 1 = SigVerify(x.pkissuer , x.hashPHC , W.sigissuer )
+
+(4)
+
+(iii) 1 = SigVerify(W.pkholder , x.hashPHC , x.sigholder )
+where Canon(·) denotes a deterministic canonicalization procedure and SigVerify(·) is the signature-verification function.
+These checks respectively enforce credential integrity, issuercertified validity, and holder ownership.
+To make the admission request compatible with recursive
+aggregation, the user transforms (x, W ) into a committed
+relaxed R1CS instance–witness pair (I, W) of the common relation Radm . Concretely, the relaxed R1CS vectors that would
+normally remain explicit are represented to the batching layer
+through public commitments, while their openings remain
+inside the witness. ZK-AMS uses an additively homomorphic
+linear commitment [21], compatible with BGV-style evaluation
+over the plaintext ring Rt . Let ppcommit = (G, H), where
+G ∈ Rtk×ℓ and H ∈ Rtk×m are public matrices over Rt . For a
+message vector M ∈ Rtm and randomness vector r ∈ Rtℓ , the
+commitment is defined as1
+Com(ppcommit , M, r) := G · r + H · M ∈ Rtk .
+
+(5)
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+Algorithm 1 Client-Side Instance Generation
+1: Input: W = {PHC}, x = {hashPHC , sigholder , pkissuer }
+2: rE ← random()
+3: rW ← random()
+4: E ← 0
+5: u ← 1
+6: E ← Com(ppE
+commit , E, rE )
+7: W ← Com(ppW
+commit , W, rW )
+8: I ← (E, u, W , x)
+9: W ← (E, rE , W, rW )
+10: Return: (I, W)
+
+The matrices G and H are generated once from public
+randomness and thereafter treated as system parameters.
+This commitment instantiation does not introduce an additional trusted setup beyond public parameter generation. Under
+standard lattice assumptions over Rt (e.g., Module-SIS/LWEtype assumptions), it provides computational binding, while
+hiding follows from fresh uniform randomness r. Its additive
+homomorphism preserves linear combinations, which is exactly the algebraic property needed to evaluate commitments
+and folding updates through BGV homomorphic operations on
+ciphertexts.
+After sampling commitment randomness (rE , rW ), the user
+sets E ← 0 and u ← 1 to embed a standard R1CS instance
+into the relaxed form, computes E and W , and thereby obtains
+the committed relaxed R1CS pair I = (E, u, W , x) and W =
+(E, rE , W, rW ).
+The resulting committed public instance is I =
+(E, u, W , x), and the corresponding witness is W =
+(E, rE , W, rW ). Here and throughout the remainder of the
+paper, overlined symbols denote public commitments, while
+the corresponding unbarred symbols denote the underlying
+plaintext quantities; for example, E = Com(ppE
+commit , E, rE ).
+The user then generates a seed key pair (pkseed , skseed ) for
+later account provisioning and forms the registration credential
+resCredential = (hashPHC , pkseed , I, W). Algorithm 1 summarizes the procedure.
+B. Phase II: Decentralized Batch Aggregation
+This phase implements the off-chain batch aggregation layer
+of ZK-AMS. A batch of N admission instances of the same
+relation Radm is folded into one accumulated statement and
+later settled with constant on-chain verification cost per batch.
+The folding pipeline runs over MKHE ciphertexts so that participating users update the encrypted accumulator state, while
+the PBS reads the public transcript and performs only batch
+finalization after folding completes. The workflow proceeds in
+three stages:
+1) Stage 1 (Initialization and Encryption): The system
+adopts globally agreed BGV MKHE parameters. Each user
+generates a key pair (pki , ski ) and publishes the public key
+1 Since messages from Nova/R1CS are over F but BGV and this comp
+mitment compute over Rt , we choose t with p | t (e.g., t = p) and embed
+Fp into Rt by the natural canonical lift. This technique of Field-to-Ring
+Embedding ensures homomorphic plaintext operations in Rt implement the
+same arithmetic as in Fp [22].
+
+5
+
+through the off-chain transcript layer. The user then encrypts
+the folding-relevant variables in its local committed relaxed
+R1CS pair under pki . Specifically, the encrypted plaintext variables are g ∈ {xi , ui , Ei , Wi , rEi , rWi }, yielding ciphertexts
+{cg }g∈{xi ,ui ,Ei ,Wi ,rEi ,rWi } . Together with the public commitments E i and W i , these encrypted artifacts are uploaded to
+the off-chain transcript layer.
+2) Stage 2 (Homomorphic State Transition): The core
+confidential batching component of ZK-AMS is the encrypted
+folding layer, which updates the batch accumulator state by
+applying Nova-style folding directly over ciphertexts. Appendices A and B summarize the Nova and MKHE mechanics
+used in this stage.
+Initial user (h1 ): The first participant initializes the accumulator by posting the encrypted state and public commitments. Concretely, for each g ∈ {x1 , u1 , E1 , W1 , rE1 , rW1 },
+the accumulator ciphertext is initialized as ĉgacc ← cg , and
+the public commitments are initialized as (E acc , W acc ) ←
+(E 1 , W 1 ).
+Subsequent user (hi ): A later participant retrieves the
+current accumulator from the public transcript and performs
+one homomorphic folding step:
+a) Cross-term processing: Let Z = (W, x, u) denote the
+witness/public-input vector used in the relaxed R1CS
+formulation, and denote the encrypted accumulated and
+incoming vectors by ĉZacc = (ĉWacc , ĉxacc , ĉuacc ) and
+cZi = (cWi , cxi , cui ). For compactness, we denote
+by ĉAZacc , ĉBZacc , ĉCZacc , ĉAZi , ĉBZi , and ĉCZi the
+ciphertexts obtained by homomorphically evaluating the
+corresponding linear maps under the common matrices (A, B, C). In the following equations, ⊕ denotes
+ciphertext-domain homomorphic addition, ⊗ denotes
+ciphertext-domain homomorphic multiplication, and a⊙
+c denotes multiplication of ciphertext c by a public scalar
+a in the plaintext ring. The user first computes these
+linear images and then evaluates the Nova-style crossterm ciphertext:
+ĉT = ĉAZacc ⊗ ĉBZi ⊕ ĉAZi ⊗ ĉBZacc ⊕
+(−1) ⊙ ĉuacc ⊗ ĉCZi ⊕ (−1) ⊙ cui ⊗ ĉCZacc .
+
+(6)
+
+b) Homomorphic commitment to the cross-term: To
+avoid revealing the plaintext cross-term before batch
+materialization, the participant computes a public commitment to it directly in the encrypted domain. After
+sampling commitment randomness rT and encrypting it
+as crT , the encrypted commitment is evaluated as
+ĉT = Com(ppTcommit , ĉT , crT ) = GT ·crT ⊕HT ·ĉT . (7)
+Users collaboratively decrypt only ĉT to obtain the
+public commitment value T , which becomes part of
+the transcript. The plaintext cross-term itself remains
+hidden.
+c) Fiat–Shamir challenge generation: The folding challenge is derived from the public transcript via the Fiat–
+Shamir transform. Let ctx denote a domain-separation
+string including the protocol identifier, the current transcript or batch identifier, and a digest of (vkNIFS , X),
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+where vkNIFS is the public verification key for the Novastyle folding interface and X = {hashPHCi , pkseed i }N
+i=1
+is the compressed batch input list later submitted at
+settlement. A Fiat–Shamir challenge is then derived from
+the public transcript:
+v :=H(ctx, E acc , W acc , E i , W i , T , i).
+
+(8)
+
+This challenge binds the folding step and the settled
+batch metadata to the same public transcript. Hence, any
+party can recompute v, and any post hoc rewrite of the
+transcript or the ordered batch input list X invalidates
+the final proof.
+d) Homomorphic folding of encrypted variables: Using
+v, the participant updates the encrypted accumulated
+state:
+ĉxnew = ĉxacc ⊕ (v ⊙ cxi )
+(9)
+ĉunew = ĉuacc ⊕ (v ⊙ cui )
+and
+ĉEnew = ĉEacc ⊕ (v ⊙ ĉT ) ⊕ (v 2 ⊙ cEi ),
+ĉrEnew = ĉrEacc ⊕ (v ⊙ crT ) ⊕ (v 2 ⊙ crEi ),
+ĉWnew = ĉWacc ⊕ (v ⊙ cWi ),
+
+(10)
+
+ĉrWnew = ĉrWacc ⊕ (v ⊙ crWi ).
+e) Public commitment folding: The corresponding public
+commitments are folded consistently:
+E new = E acc + v · T + v 2 · E i ,
+W new = W acc + v · W i .
+
+(11)
+
+f) State update: The new encrypted state and commitments are then written back to the transcript. For each
+g ∈ {x, u, E, rE , W, rW }, set ĉgacc ← ĉgnew , and
+update the public commitments as (E acc , W acc ) ←
+(E new , W new ).
+3) Stage 3 (Distributed Decryption and Batch Materialization): After the last folding step, users collaboratively
+reconstruct only the folded plaintext components required for
+proof finalization. Appendix B gives the MKHE decryption
+interfaces and the prototype-specific share-release assumptions
+used here.
+• Partial
+decryption:
+Let
+ĉacc
+=
+{ĉx , ĉE , ĉrE , ĉW , ĉrW , ĉu } denote the final accumulator
+ciphertexts. Each user computes partial decryption shares
+µi,g ← MKHE.PartialDecrypt(ski , ĉg ) for each relevant
+component g and publishes them to the transcript layer.
+• Share
+fusion: The PBS or any other eligible
+node combines the published shares to reconstruct
+xf , uf , Ef , rE,f , Wf , rW,f . In the current prototype, the
+evaluated accumulator depends on the full batch key set,
+so this step uses the full set of published shares for the
+finalized batch rather than a separate tunable t-out-of-N
+threshold-decryption policy.
+• Batch materialization: The accumulated public instance
+becomes Iacc,N = (E acc , uf , W acc , xf ), which serves as
+the public batch anchor for proof finalization. Because the
+folded components are randomized linear combinations,
+they do not reveal individual user witnesses.
+
+6
+
+C. Phase III: Proof Finalization and Submission
+This phase converts the materialized folded batch into
+a single succinct settlement proof and prepares the corresponding batch-submission material. Once a batch reaches
+the configured size N or a timeout triggers finalization, the
+PBS completes proof finalization against the accumulated
+admission relation. This phase proceeds through the following
+stages.
+1) Finalization Trigger and Objective: Once a batch
+reaches size N or a timeout triggers finalization, the PBS
+generates a succinct proof that the accumulated batch is
+folding-consistent and satisfiable under the admission relation.
+The objective of this phase is to certify both that the final
+public folding step is valid and that the resulting committed
+relaxed R1CS instance still satisfies the same admission relation enforced in Phase I.
+2) Accumulator Reconstruction: After distributed decryption, the PBS receives (xf , uf , Ef , rE,f , Wf , rW,f ), forms the
+accumulated witness Wacc,N = (Ef , rE,f , Wf , rW,f ), and reconstructs the public instance Iacc,N = (E acc , uf , W acc , xf )
+from the transcript commitments. In addition, it reads the
+public transcript metadata needed to recompute the Fiat–
+Shamir challenge for the finalization step.
+3) Padding Fold and Proof Statement: To finalize the recursive chain, ZK-AMS performs one publicly defined padding
+fold using a fixed padding instance–witness pair (Ipad , Wpad ).
+This step preserves the admission relation while producing a
+terminal folded instance suitable for succinct proof generation.
+Since the PBS already holds the folded plaintext components
+needed for the last cross-term evaluation, it computes the
+padding cross-term TN +1 in the clear using (xf , uf , Wf ) and
+the fixed padding values (xpad , upad , Wpad ), and then commits
+to it to obtain T N +1 .
+We denote by C1 the committed relaxed R1CS checker for
+the admission relation. On input (I = (E, u, W , x), W =
+(E, rE , W, rW )), C1 checks (i) commitment-opening consistency, namely E = Com(ppE
+commit , E, rE ) and W =
+Com(ppW
+,
+W,
+r
+),
+and
+(ii)
+relaxed
+R1CS satisfiability
+W
+commit
+(AZ) ◦ (BZ) = u · (CZ) + E for Z = (W, x, u), where
+the encoded constraints are exactly the PHC integrity, issuervalidity, and holder-ownership checks from Phase I.
+We then design a finalization circuit C2 that
+proves the materialized batch is both transcriptconsistent and satisfiable. Specifically, C2 (i) recomputes
+Iacc,N +1 = NIFS.Verify(vkNIFS , Iacc,N , Ipad , T N +1 ) to
+enforce consistency of the final padding fold, (ii) runs C1 on
+(Iacc,N +1 , Wacc,N +1 ), and (iii) enforces that Ipad equals the
+publicly specified padding instance so that the PBS cannot
+substitute an arbitrary padding input. The resulting proof
+therefore certifies that the submitted batch anchor corresponds
+to a well-formed finalized fold and a satisfiable accumulated
+admission statement. Appendix A summarizes the Nova-side
+background for this finalization step.
+4) Proof-Generation Interface: For the fixed proof circuit
+C2 , the proving and verification keys are generated once
+during system setup and thereafter treated as public system
+parameters for the PBS and the on-chain verifier. Algorithm 2
+summarizes proof finalization.
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+Algorithm 2 Recursive Proof Finalization
+1: Input: Iacc,N , T N +1 , Ipad , Iacc,N +1 , Wacc,N +1 , pk
+2: Public parameters: verification key vk for circuit C2 ,
+
+generated once during system setup
+3: Generate proof:
+4:
+Inputpub ← (Iacc,N , T N +1 , Iacc,N +1 )
+5:
+Inputpri ← (Ipad , Wacc,N +1 )
+6:
+πzk ← zkSNARK.PROVE(pk, Inputpub , Inputpri )
+7: Return: πzk
+
+Algorithm 3 Verifier Contract
+1: Input: Iacc,N , T N +1 , πzk , X, Iacc,N +1
+2: stmt ← (Iacc,N , T N +1 , Iacc,N +1 )
+3: validation ← zkSNARK.VERIFY(vk, stmt, πzk )
+4: if validation ̸= 1 then
+5:
+return “Verification failed”
+6: end if
+7: (hashesPHC , pksseed ) ← X
+8: stored ← Traverse(hashesPHC )
+9: if stored = 1 then
+10:
+return “Already registered”
+11: end if
+12: Store(hashesPHC , pksseed )
+13: return “Verification succeeded and admission allowed”
+
+Operationally, this phase bridges the off-chain batching
+layer and the on-chain settlement layer without giving the PBS
+direct access to individual user witnesses during batching.
+D. Phase IV: On-Chain Batch Admission
+This phase settles one admission batch on-chain using a
+single succinct proof and records the resulting admission
+anchors for later account provisioning. It proceeds through
+batch submission, verifier-side checks, and contract execution
+as described below.
+1) Batch Submission: The PBS constructs the compressed
+batch input list X = {hashPHCi , pkseed i }N
+i=1 from the admitted
+users’ registration credentials. The same ordered batch metadata is already bound into the Fiat–Shamir context during
+Phase II, so the submitted X must match the transcriptconsistent batch certified by πzk . The PBS then submits
+(πzk , X, Iacc,N , T N +1 , Iacc,N +1 ) to the Verifier Contract.
+2) Verifier-Side Checks: The contract first verifies the succinct proof and then checks that the PHC hashes in X have
+not been recorded previously. If both checks succeed, it stores
+the PHC hashes and seed public keys as admission anchors,
+thereby creating a publicly verifiable record of admitted seed
+identities while preventing duplicate registration without revealing the underlying PHCs.
+Algorithm 3 summarizes the on-chain admission logic.
+
+7
+
+Algorithm 4 Soul Registry Contract
+1: Input: σ, L, addrsoul
+2: stored ← Traverse(L)
+3: if stored = 0 then
+4:
+return “The ring of public keys is invalid”
+5: end if
+6: validation ← LRS.Verify(1k , 1n , addrsoul , L, σ)
+7: if validation ̸= 1 then
+8:
+return “Verification failed”
+9: end if
+10: y0 ← KeyImage(σ)
+11: stored ← Traverse(y0 )
+12: if stored ̸= 0 then
+13:
+return “Already provisioned”
+14: end if
+15: Store(y0 , addrsoul )
+16: return “Provisioning succeeded”
+
+1) Provisioning Objective: Admission and account provisioning are intentionally separated: a user is first admitted
+through batch settlement and then binds a fresh Soul Account
+anonymously.
+2) User-Side Provisioning: To provision a Soul Account, the user generates a new account key pair
+(addrsoul , pksoul , sksoul ) and selects a ring L of admitted seed
+public keys from the on-chain registry, including its own
+pkseed . It then computes the MLSAGS key image y0 ← skseed ·
+Hp (pkseed ) and signs the message addrsoul using the admitted
+seed key as σ ← LRS.Sign(1k , 1n , addrsoul , L, skseed ). The
+resulting signature can be written as σ = (y0 , . . .), so the
+key image acts as a one-time provisioning tag while the
+signer remains hidden inside the ring. The user then submits
+(σ, L, addrsoul ) to the Soul Registry Contract. Appendix C
+summarizes the MLSAGS interface and key-image mechanism
+used in this phase.
+3) Registry-Side Verification: The contract checks that all
+public keys in L are valid admitted seed public keys, verifies
+the linkable ring signature on addrsoul , and rejects previously
+used key images. Because MLSAGS linkability requires repeated signatures under the same admitted seed secret key to
+induce the same key image, this uniqueness check enforces
+that one admitted seed identity can activate at most one Soul
+Account without revealing which ring member performed the
+provisioning. If all checks pass, it records (y0 , addrsoul ) and
+finalizes provisioning. Algorithm 4 summarizes the contract
+logic.
+Thus, ZK-AMS supports account-level anonymity while still
+enforcing one admitted seed identity to at most one operational
+Soul Account.
+V. S ECURITY AND O PERATIONAL R ISK A NALYSIS
+
+E. Phase V: Anonymous Account Provisioning
+This final phase activates an admitted user’s operational
+on-chain identity, termed a Soul Account in ZK-AMS, after
+admission has been settled. It proceeds through user-side
+provisioning, registry-side verification, and one-to-one account
+activation.
+
+ZK-AMS combines a confidential off-chain batching plane
+with a public on-chain settlement plane. Because its contribution is a principled systems integration rather than a
+new primitive, we analyze security at the system level: the
+propositions below state which guarantee is obtained from
+which primitive or trust assumption, while primitive-level
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+8
+
+TABLE I: System-level threat model of ZK-AMS
+Threat
+
+Mitigation (Mechanism)
+
+Assumption
+
+Enforced / Verified
+at
+
+Category I: Admission integrity & uniqueness enforcement
+Forged admission
+The admission relation checks PHC integrity, issuer
+signature validity, and holder-key ownership; batch
+settlement succeeds only if the succinct proof verifies.
+
+Signature unforgeability;
+zkSNARK soundness.
+
+On-chain: Verifier
+Contract
+
+Duplicate admission
+(credential reuse)
+
+The Verifier Contract stores and checks the uniqueness
+of hashPHC ; the proof binds each admitted batch entry
+to the submitted credential hash.
+
+Hash collision resistance; issuerside uniqueness of PHCs.
+
+On-chain: Verifier
+Contract
+
+Double provisioning
+
+The Soul Registry Contract records the key image y0
+and rejects repeated use of the same admitted seed
+identity for multiple accounts.
+
+MLSAGS linkability (unique key
+image per seed key).
+
+On-chain: Soul
+Registry Contract
+
+MLSAGS anonymity and
+linkability.
+
+Publicly verifiable
+cryptographic
+guarantee
+
+MKHE semantic security before
+share release; at least two batch
+participants remain non-colluding
+with the PBS in a finalized batch.
+
+Off-chain confidential batching layer
+
+Fiat–Shamir heuristic (RO
+model); Nova/NIFS consistency.
+
+Off-chain transcript
++ On-chain Verifier
+Contract
+
+Category II: Privacy & confidentiality preservation
+Deanonymization /
+MLSAGS signer ambiguity hides which admitted seed
+account linkage
+identity provisioned the Soul Account, while the key
+image reveals only duplicate-use information.
+Witness leakage to
+PBS
+
+Folding is evaluated over MKHE ciphertexts; the PBS
+sees only ciphertexts, commitments, and public transcript
+state. Final decryption reconstructs only a randomized
+folded batch output, which hides individual witnesses
+unless the PBS coalition leaves only one non-colluding
+participant in the batch.
+
+Category III: Operational resilience & availability
+PBS tampering
+Fiat–Shamir binds each folding step to the public
+/ transcript
+transcript; a transcript-inconsistent batch causes final
+inconsistency
+proof verification failure.
+Faulty or missing
+decryption shares
+
+In the current prototype, a batch cannot be finalized
+without the required share set; malformed or missing
+shares therefore cause batch stalling or exclusion
+and re-queuing under an off-chain policy. Stronger
+handling would require a verifiable share-validation or
+accountable-abort layer.
+
+Availability of a sufficient share
+set; no publicly verifiable sharecorrectness or identifiable-abort
+layer in the current prototype.
+
+Off-chain coordination policy
+
+PBS delay /
+censorship / batch
+stalling
+
+The PBS role is permissionless; after timeout, another
+node may finalize from the same public transcript, and
+affected requests can be re-queued without invalidating
+prior published state.
+
+At least one live PBS; eventual
+transcript availability.
+
+Operational policy
+layer
+
+Off-chain data
+unavailability
+
+Intermediate artifacts are stored on IPFS/IPNS and can
+be replicated by multiple nodes; only compact admission
+anchors are required on-chain for safety.
+
+Eventual availability of off-chain
+storage.
+
+Off-chain transcript
+layer
+
+proofs remain those of the cited constructions. Longer proof
+sketches and explicit assumption-to-guarantee mappings for
+G1–G6 are deferred to Appendix D. Table I summarizes the
+main threats, mitigations, and assumptions.
+
+A. System Assumptions and Security Goals
+1) Assumptions: Our analysis relies on the following assumptions.
+A1) Credential trust root: Recognized issuers generate
+valid PHCs, and each valid PHC corresponds to at most
+one real-world person.
+• A2) Primitive security: The adopted primitives satisfy
+their standard properties: issuer/holder signature unforgeability, collision-resistant hashing, zkSNARK soundness
+and zero knowledge, Nova/NIFS consistency in the Fiat–
+Shamir (random-oracle) setting, MLSAGS correctness,
+unforgeability, anonymity, and linkability, and BGV-style
+MKHE semantic security.
+
+•
+
+A3) Blockchain correctness: The blockchain executes
+smart contracts faithfully and preserves the integrity of
+admitted state once transactions are confirmed.
+• A4) Eventual transcript availability: The off-chain
+transcript layer (IPFS/IPNS) eventually makes published
+objects retrievable, although temporary delay may occur.
+• A5) Confidentiality coalition bound in the current
+prototype: The current MKHE batch-materialization step
+uses all-party share release over the finalized batch key
+set and does not implement a separate tunable t-outof-N threshold-decryption layer. Accordingly, individualwitness confidentiality is claimed only when at least
+two participants remain outside the PBS coalition. If the
+PBS colludes with all but one finalized participant, the
+coalition may isolate that participant’s folded plaintext
+contribution from the revealed accumulator after share
+release; this is weaker than direct recovery of the participant’s entire original witness, but it is already outside the
+confidentiality claim of the current prototype.
+•
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+2) Security goals: ZK-AMS aims to provide the following
+system-level guarantees:
+• G1) Admission integrity: only users with valid PHCs
+and corresponding holder keys can be admitted.
+• G2) Duplicate-admission resistance: the same PHC
+cannot be admitted multiple times.
+• G3) Credibly anonymous provisioning: an admitted
+user can provision an anonymous Soul Account without
+revealing which admitted seed identity they own.
+• G4) Single-account enforcement: one admitted seed
+identity can provision at most one active Soul Account.
+• G5) Witness confidentiality during batching: the PBS
+should not learn any individual user witness from the offchain batching workflow.
+• G6) Batch-consistency and settlement integrity: a
+tampered or transcript-inconsistent batch should fail onchain verification.
+3) Adversarial model: We consider PPT adversaries including malicious users attempting forged or repeated admission,
+a malicious PBS attempting tampering, delay, or selective
+suppression, malicious participants withholding or corrupting
+decryption shares, and external observers trying to link admitted credentials to provisioned accounts. The PBS is not
+trusted. Correctness claims allow arbitrary collusion subject to
+A1–A4. Confidentiality adds the coalition bound in A5: if the
+PBS colludes with all but one participant in a finalized batch,
+the remaining participant’s folded plaintext contribution to the
+revealed accumulator may be isolated after share release, so
+the paper does not claim confidentiality in that case.
+B. Admission Integrity and Provisioning Correctness
+The following propositions formalize G1–G4 as systemlevel consequences of A1–A3.
+Proposition 1 (Admission integrity). Under Assumptions A1–
+A3, if a PPT adversary causes the Verifier Contract to accept
+an admission request for which it does not know a valid PHC
+and the corresponding holder key, then one can construct
+a PPT adversary that breaks either issuer/holder signature
+unforgeability or zkSNARK soundness with non-negligible
+probability.
+Proof sketch. Any admitted batch must pass the on-chain
+zkSNARK verification for the committed admission relation.
+If the accepted batch encodes a false admission statement,
+then the adversary breaks zkSNARK soundness. Otherwise,
+the accepted statement must satisfy the embedded checks for
+PHC validity, issuer certification, and holder-key ownership;
+fabricating such a statement without a valid credential and
+holder key yields a forgery against the corresponding signature
+component. Hence a successful forged admission reduces to
+one of these primitive failures.
+Proposition 2 (Duplicate-admission resistance). Under Assumptions A1–A3, if a PPT adversary causes the same realworld identity anchor to be admitted twice without triggering
+the duplicate-registration check, then one can construct a PPT
+adversary that breaks collision resistance of hashPHC , breaks
+
+9
+
+zkSNARK soundness, or violates the issuer-side uniqueness
+assumption in A1.
+Proof sketch. The Verifier Contract records admitted hashPHC
+values on-chain and rejects repeated anchors atomically during
+settlement. A successful duplicate admission therefore implies
+either a collision in hashPHC , a false accepting proof for an
+inconsistent batch, or violation of issuer-side uniqueness in
+A1.
+Proposition 3 (Anonymous yet enforceable account provisioning). Under Assumptions A2–A3, any Soul Account accepted
+by the Soul Registry is authorized by some admitted seed
+identity, and any PPT adversary’s advantage in identifying
+which admitted seed identity produced the accepted provisioning signature is bounded by its advantage against MLSAGS
+anonymity.
+Proof sketch. The Soul Registry accepts provisioning only
+if the submitted MLSAGS signature verifies against a ring
+of admitted seed public keys. Thus, acceptance without any
+admitted signer contradicts MLSAGS correctness or unforgeability. Given that some admitted signer exists, any nonnegligible deanonymization advantage transfers directly to an
+adversary against MLSAGS anonymity.
+Proposition 4 (Single-account enforcement). Under Assumption A2, if a PPT adversary causes two distinct Soul Accounts
+derived from the same admitted seed identity to be accepted
+without reusing the same recorded key image, then one can
+construct a PPT adversary that breaks MLSAGS linkability.
+Proof sketch. The registry records the MLSAGS key image
+y0 after successful provisioning and rejects later attempts
+carrying the same image. Since MLSAGS linkability requires
+all signatures under a fixed seed secret key to induce the
+same key image, accepting two distinct provisionings from
+the same admitted seed identity without repeated image use
+would violate MLSAGS linkability.
+C. Privacy and Confidentiality Preservation
+The next two propositions capture G5–G6. For witness confidentiality, the operative condition is A5: the current prototype
+does not expose a tunable threshold-decryption parameter, so
+the guarantee is stated only for batches that leave at least two
+participants outside the PBS coalition.
+Proposition 5 (Witness confidentiality against the PBS). Fix a
+finalized batch of size N . Under Assumptions A2 and A5, any
+coalition consisting of the PBS and at most N − 2 batch participants cannot recover any specific remaining participant’s
+underlying witness from the transcript except with negligible
+probability beyond what is implied by the public commitments
+and the intentionally revealed folded batch output.
+Proof sketch. Before share release, a hybrid argument replacing honest users’ encrypted witnesses with encryptions
+of dummy values yields a distinguisher against BGV-style
+MKHE semantic security if the adversary can still recover
+an individual witness. After share release, the coalition learns
+the final folded plaintext accumulator. By A5, when at least
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+two participants remain outside the PBS coalition, subtracting
+the colluders’ known contributions reveals only a public linear combination of at least two unknown witness-dependent
+terms, not an isolated term attributable to any one remaining
+participant. If instead only one participant remains outside the
+coalition, then that participant’s folded plaintext contribution
+to the revealed accumulator may be isolated after share release.
+This is weaker than direct recovery of the participant’s entire
+original witness, but it is already outside the confidentiality
+claim of the current prototype.
+Proposition 6 (Batch-consistency and settlement integrity).
+Under Assumptions A2–A3, in the Fiat–Shamir random-oracle
+setting, if a PPT adversary tampers with the batch transcript or submits transcript-inconsistent batch material yet still
+causes the Verifier Contract to accept, then one can construct
+a PPT adversary that breaks either Nova/NIFS consistency or
+zkSNARK soundness with non-negligible probability.
+Proof sketch. Each folding step derives its challenge from
+the public transcript through Fiat–Shamir, so any change to
+commitments, ordering, or batch metadata changes the derived
+challenge unless the adversary breaks Nova/NIFS transcript
+consistency in the random-oracle setting. The final proof
+circuit checks that the submitted accumulated instance is
+transcript-consistent and satisfiable. Thus an accepted tampered batch implies either a Nova/NIFS consistency break or
+a false accepting zkSNARK proof.
+D. Operational Resilience and Limitations
+The propositions above cover correctness and confidentiality
+under A1–A5. Deployment-level risks remain.
+1) Faulty or missing decryption shares: The current prototype assumes that a sufficient set of users eventually provides
+the required decryption shares. If a participant withholds or
+malforms its share, the batch cannot be finalized from the
+current transcript state; even a single malicious participant can
+therefore stall the batch it joins. The present recovery rule is
+off-chain: users with missing or invalid shares are excluded
+after timeout and the affected requests are re-queued. Thus
+the issue is a liveness bottleneck rather than a safety failure of
+already confirmed on-chain state, but the prototype does not
+yet provide cryptographic accountability for the abort.
+A production-grade design would strengthen this stage
+with publicly verifiable share validation or accountable abort.
+Representative directions include PVSS [23] and MPC with
+identifiable abort [24]. Integrating such mechanisms into batch
+materialization could support stronger exclusion and recovery
+policies than the current re-queue rule, but this is outside the
+scope of the prototype.
+Other deployment limitations.: Because the PBS role
+is permissionless, another node may take over after timeout
+from the same public transcript; this limits monopolization but
+does not eliminate temporary censorship or latency inflation.
+Likewise, off-chain transcript artifacts are replicated through
+IPFS/IPNS, so confirmed on-chain state remains trustworthy even though persistent transcript unavailability can delay
+completion. Batch settlement is also exposed to transaction
+
+10
+
+ordering and mempool races: atomic duplicate checks prevent
+forged admission under successful contract verification, but
+conflicting anchors can still cause revert or re-queue cost.
+Finally, ZK-AMS does not yet integrate post-admission PHC
+revocation, expiry, or reissuance, nor does it provide native
+Soul-Account recovery after key loss. Possible extensions
+include epoch-based re-admission, revocation registries, social recovery, recovery-authorized reprovisioning, private relay
+submission, encrypted mempools, or commit-then-reveal style
+anchoring.
+2) Current scope of guarantees: ZK-AMS provides admission integrity, duplicate-admission resistance, witness confidentiality during batching, and anonymous-but-enforceable
+provisioning under the stated assumptions. Its current limits are equally clear: uniqueness still depends on PHC issuance, confidentiality does not cover the coalition “PBS +
+all but one participant” because that coalition may isolate the
+last remaining participant’s folded plaintext contribution after
+share release, liveness against malicious share withholding or
+strategic PBS behavior is only partially addressed through offchain recovery, transaction ordering can still impose denial
+or re-queue cost, and neither PHC lifecycle management nor
+Soul-Account recovery is yet integrated. These limits do not
+invalidate the correctness of admitted batches, but they do
+affect privacy margin, availability, and long-term deployability.
+VI. I MPLEMENTATION AND E XPERIMENTAL E VALUATION
+We evaluate ZK-AMS as a deployable admission infrastructure for Web 3.0 platforms, where onboarding must
+remain privacy-preserving, Sybil-resistant, and operationally
+predictable under bursty demand. Compared with the preliminary conference version, the present implementation includes
+the full end-to-end workflow of confidential off-chain batching, permissionless batch finalization, on-chain batch admission, and anonymous account provisioning. Our evaluation
+aims to answer the following questions:
+• EQ1 (Scalable settlement): Does recursive proof aggregation keep on-chain verification cost stable as the
+admission batch size N grows, thereby enabling costpredictable batch settlement?
+• EQ2 (Admission-settlement latency): What is the
+admission-settlement processing latency, excluding batchformation waiting time, and how is it distributed across
+client-side preparation, off-chain transcript operations,
+PBS-side finalization, and on-chain settlement?
+• EQ3 (Configuration trade-offs): How do batch size
+N and ring size L affect throughput, latency, and peruser cost, and what parameter settings are practically
+attractive?
+A. Implementation Setup and Metrics
+Testbed: We deploy the Verifier Contract and Soul Registry Contract on a private six-node Ethereum network
+running Clique proof-of-authority (PoA) with Go-Ethereum
+(Geth) [25] on Alibaba Cloud. The block period is 12 s. We
+use private PoA to stabilize block production and contract
+execution so that workflow cost is repeatable under controlled
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+load. For throughput translation, we set the block gas limit to
+60M and use the EIP-1559 target gas (30M) as the nominal
+per-block gas budget. Thus, the reported gas costs are more
+portable across EVM-compatible deployments than the wallclock confirmation delay, which would differ on Ethereum
+mainnet or L2 networks.
+Roles and hardware: We evaluate two representative roles
+on the same hardware platform, a Mac mini with Apple M4
+and 16 GB RAM. One device serves as the Permissionless
+Batch Submitter (PBS) for batch fusion and proof finalization,
+and the other as the user client for credential processing,
+confidential-folding participation, and MLSAGS signing.
+Software stack: We implement the contracts in Solidity on
+the private Ethereum testbed; the proof layer uses Groth16 [26]
+over BN254, recursive aggregation uses Arkworks [27] and
+Sonobe [28], and the confidential batching layer uses a BGVstyle MKHE implementation with IPFS/IPNS as the transcript
+substrate.
+Metrics: We report PBS-side proving cost and throughput,
+on-chain settlement gas, admission-settlement processing latency to first confirmation (excluding batch-formation waiting
+time) and its breakdown, and correctness/operational metrics
+including decryption success and confidential-folding overhead. Unless otherwise stated, each measurement is repeated
+nrep = 10 times and we report the mean.
+Evaluation scope: We separate three result regimes. First,
+full admission-settlement path measurements (Phases I–IV in
+Section IV), including confidential folding, distributed decryption, batch finalization, and on-chain settlement, are reported
+up to N = 128, the largest batch size repeatedly executed
+on the current hardware with the chosen MKHE parameterization. Second, larger-N results up to N = 1100 isolate the
+recursive proving and settlement path after batch compression
+and should therefore be read as proof-compression scaling
+evidence rather than full confidential-pipeline measurements.
+Third, Phase V account-provisioning overhead is reported
+separately through MLSAGS signing and verification measurements rather than folded into the admission-settlement latency
+tables.
+Baseline and comparison scope: We compare ZK-AMS
+experimentally against the original non-recursive zkBID design [16], which removes recursive batch compression while
+preserving the same admission semantics. This implemented
+baseline isolates the impact of recursive aggregation on proving time, on-chain verification cost, and amortized admission efficiency. We also report account-provisioning overhead
+through MLSAGS verification. For clarity, zkBID is the only
+implemented system-level baseline in this section.
+B. MKHE Correctness and Noise Robustness
+We first test whether the confidential batching layer remains
+correct at representative large-batch checkpoints. Table II reports batch size, effective multiplication depth, repeated trials,
+decryption failures, and remaining noise margin, where margin
+(bits) denotes the modulus-chain slack to the first decryption
+failure.
+Table II shows zero decryption failures in these repeated
+checkpoints up to N = 64 and a 67-bit modulus-chain
+
+11
+
+TABLE II: MKHE correctness in repeated large-batch checkpoints.
+N Depth Trials Fails Margin (bits)
+16
+8
+10
+0
+67
+32
+10
+10
+0
+67
+64
+12
+10
+0
+67
+
+slack throughout them. Table III further includes successful
+full admission-settlement measurements at N = 128, where
+confidential folding reaches 1615.85 s. We therefore report full
+admission-settlement measurements up to N = 128 and treat
+larger-N plots in EQ1 as recursion-scaling evidence rather
+than direct measurements of the full confidential workflow.
+This overhead should be read as the cost of preserving
+witness confidentiality during batching, not as the source of the
+verifier-gas benefit, which comes from the recursive settlement
+path itself.
+C. EQ1: Scalable Settlement and Predictable On-Chain Cost
+We next examine how the admission-settlement layer scales
+with batch size N . Unless stated otherwise, this subsection
+focuses on the recursive proving and settlement path after
+batch compression rather than the full confidential admission
+pipeline.
+1) PBS-side proving scalability: The PBS pipeline is the
+main off-chain throughput bottleneck. In the non-recursive
+baseline, proving cost grows more rapidly with batch size
+because more admission workload is pushed directly into proof
+generation, whereas ZK-AMS operates on a batch-compressed
+statement obtained through recursive folding.
+Fig. 2 shows that the baseline circuit size grows almost
+linearly, from 5.16M constraints at N = 400 to 14.19M at
+N = 1100, whereas the recursive design stays fixed at 9.894M
+constraints. The non-recursive baseline is still smaller for N ≤
+700, but the crossover occurs between N = 700 and N = 800;
+from N = 800 onward, the recursive design yields the smaller
+final proof circuit. In other words, recursive aggregation pays
+a fixed circuit footprint for better large-batch scaling.
+Fig. 3 shows that the baseline proving time grows from
+69.27 s at N = 400 to 320.57 s at N = 1100, while ZK-AMS
+remains in a narrow band of about 140–150 s. The baseline is
+faster for N = 400–700, but ZK-AMS becomes faster from
+N = 800 onward and widens the gap at larger batch sizes.
+In throughput terms, the baseline drops from 5.77 to 3.43
+users/s, whereas ZK-AMS rises from 2.66 users/s to a peak
+of 7.76 users/s at N = 1000 and remains above 7.7 users/s
+at N = 1100. This shows that the recursive pipeline pays a
+fixed aggregation overhead at moderate batch sizes but scales
+better once the batch is large enough.
+2) On-chain cost predictability: Fig. 4 reports batch-proof
+verification gas only. The recursive ZK-AMS curve is shown
+for 2 ≤ N ≤ 256 because recursive batch verification becomes
+meaningful only once at least one folding step exists; thus
+N = 1 is omitted from the recursive curve and kept only as
+the single-user reference for the non-batched baseline. The
+baseline corresponds to verifying N independent Groth16
+admission proofs on-chain, so its verifier gas is computed as
+Cind (N ) ≈ N × 250.44K from our measured single-proof
+verifier cost at N = 1. Under this construction, the baseline
+rises from 250.44K at N = 1 to 11.20M at N = 256, whereas
+
+TABLE III: Admission-settlement processing latency breakdown to
+first confirmation (excluding batch-formation waiting time).
+N
+
+Prep IPFS
+Fold
+(s)
+(s)
+(s)
+1
+0.51 0.04
+0.13
+16 1.56 0.06
+86.41
+32 1.71 0.06 218.78
+64 1.76 0.07 610.91
+128 1.78 0.05 1615.85
+
+PBS Chain Total
+(s)
+(s)
+(s)
+125.85 60.48 187.00
+124.24 58.88 271.14
+118.67 60.56 399.78
+122.89 58.50 794.14
+125.43 52.78 1795.89
+
+·104
+
+12
+
+Baseline
+ZK-AMS
+
+400
+
+200
+
+0
+400
+
+Baseline
+ZK-AMS
+
+500
+
+600
+
+700
+
+800
+
+900
+
+1,000 1,100
+
+PHC Batch Size
+
+Fig. 3: PBS proof-generation time versus admission batch size N .
+
+0
+400
+
+500
+
+600
+
+700
+
+800
+
+900
+
+1,000 1,100
+
+PHC Batch Size
+
+Fig. 2: Circuit constraint counts versus admission batch size N .
+
+the recursive verifier gas stays near 791K across the recursive
+range. The crossover occurs between N = 8 and N = 16:
+the baseline is cheaper up to N = 8, but from N = 16
+onward the recursive design incurs lower verifier-side gas.
+In short, recursive batch-proof verification keeps verifier gas
+approximately flat as batch size increases.
+The full batch-admission settlement gas further includes
+the contract-side admission overhead for storing and checking
+the submitted batch metadata. Combining the recursive batchproof verification cost from Fig. 4 with the additional contractside overhead of about 143K gas observed in Fig. 6(d), we
+estimate the full batch-admission settlement cost as about
+791K +143K ≈ 934K gas.
+At scale, the dominant chain-side cost shifts from batch
+admission settlement to per-user account provisioning. Using
+Cuser (N ) ≈ CMLSAGS + Csettle
+with Csettle ≈ 934K gas, the
+N
+amortized batch-admission settlement contribution falls from
+about 467K gas at N = 2 to about 3.6K gas at N = 256;
+for sufficiently large batches, the per-user chain-side cost is
+therefore dominated by MLSAGS account provisioning rather
+than recursive batch settlement.
+D. EQ2: Admission-Settlement Latency Breakdown
+We next decompose the admission-settlement processing
+latency to first confirmation, excluding the batch-formation
+waiting time Twait (N ) from Eq. (3), into client-side preparation, IPFS/IPNS access, confidential folding and share generation, PBS-side fusion and proof finalization, and on-chain
+inclusion/execution delay.
+Table III shows a clear separation between nearly batchinvariant and batch-sensitive components. The N = 1
+row serves only as a single-request reference point rather
+than a recursive-batching measurement. Across the measured
+batched runs, client-side preparation stays within 1.56–1.78 s,
+IPFS/IPNS access within 0.05–0.07 s, the observed chain-side
+1-confirm delay within 52.78–60.56 s, and PBS-side finalization roughly flat at 118.67–125.43 s. Notably, the observed
+chain delay is substantially larger than the nominal 12 s block
+
+·104
+
+1.2
+
+Baseline
+ZK-AMS
+
+1
+0.8
+0.6
+0.4
+0.2
+0
+
+1
+
+16
+
+4
+
+64
+
+128
+
+256
+
+PHC Batch Size
+
+Fig. 4: On-chain gas cost for batch-proof verification versus batch
+size N .
+·104
+
+4,000
+
+24k
+
+MLSAGS signing time
+MLSAGS verification gas
+
+3,000
+
+18k
+
+2,000
+
+12k
+
+1,000
+
+6k
+
+0
+20
+
+21
+
+22
+
+23
+24
+25
+Ring Size (L)
+
+26
+
+27
+
+verification Gas (K)
+
+0.5
+
+ZKP Verification Cost (K gas)
+
+1
+
+Signing Time (ms)
+
+Constraints (K)
+
+1.5
+
+ZKP Generation Time (s)
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+0
+28
+
+Fig. 5: MLSAGS signing time (client) and on-chain verification gas
+versus ring size L.
+
+period of our private PoA testbed, so wall-clock confirmation
+should be interpreted separately from gas portability. By
+contrast, confidential folding grows from 0.13 s at N = 1
+to 1615.85 s at N = 128 and dominates the large-batch
+latency. As a result, the measured admission-settlement processing latency rises from 187.00 s at N = 1 to 1795.89 s at
+N = 128. This confirms that the full confidential admissionsettlement path remains executable at N = 128 on the current
+hardware, while also making clear that confidential folding is
+the limiting stage. Within the scope of these processing-only
+measurements, the critical path is therefore well approximated
+(1)
+by Tadm ≈ maxi Tclient,i + Ttranscript + Tpbs + Tchain , where
+Ttranscript includes IPFS/IPNS access and share availability;
+the full batch latency in Eq. (3) would additionally include
+Twait (N ).
+This latency profile indicates that the current prototype is
+better suited to high-value or bursty admission windows than
+to interactive consumer login. Still, several stages are naturally
+
+Fuse time (ms)
+
+10,000
+8,000
+6,000
+4,000
+2,000
+
+(a)
+
+( N=1: init, no fold )
+
+0
+16
+
+32
+
+(b)
+
+1,500
+1,000
+500
+0
+
+64
+
+0
+
+16
+
+32
+
+Users (N )
+600
+500
+400
+300
+200
+100
+0
+
+160
+
+(d)
+
+150
+100
+50
+0
+
+120
+80
+40
+0
+
+16
+
+32
+
+64
+
+Users (N )
+
+(c)
+
+0
+
+13
+
+Gas/user (k)
+
+Total off-chain time (s)
+
+0
+
+2,000
+
+Total gas (k)
+
+Avg fold time (ms)
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+64
+
+Users (N )
+
+0
+
+16
+
+0 16 32
+
+64
+
+32
+
+64
+
+Users (N )
+
+Fig. 6: Scalability of confidential off-chain folding as the participant count N increases: (a) average fold time; (b) fuse time; (c) aggregate
+off-chain time; and (d) on-chain gas overhead, with an inset showing amortized gas per admitted user.
+
+parallel across users, including credential preparation, ciphertext generation, and transcript publication, and these steps for
+batch k + 1 can overlap with PBS finalization and on-chain
+settlement of batch k. By contrast, the encrypted accumulator
+update is only partially parallelizable because each fold is
+bound to the latest public transcript through a Fiat–Shamir
+challenge. The most realistic near-term optimization path is
+therefore pipelined batch overlap plus parallel preprocessing,
+rather than full elimination of the sequential folding bottleneck.
+E. EQ3: Configuration Trade-offs and System Bottlenecks
+1) Ring size L and account-provisioning overhead: The
+anonymity of post-admission account provisioning is controlled by the MLSAGS ring size L. Fig. 5 shows that
+both signing time and verification gas increase approximately
+linearly with L over the range L ∈ [1, 256]. Specifically, MLSAGS signing grows from 19.19 ms at L = 1 to 3425.11 ms
+at L = 256, while on-chain verification gas rises from 98.21K
+gas to 16.67M gas. This makes L an explicit anonymity–
+cost knob. In practice, a ring size L ∈ [8, 16] remains the
+most practical operating region in our prototype, because it
+keeps client-side signing below about 221 ms and verifierside gas below about 1.07M while still providing a non-trivial
+anonymity set. This is also consistent with practical anonymity
+settings used in privacy-oriented systems such as Monero [29].
+2) Decentralized confidential folding overhead: Fig. 6 reports the overhead of the confidential off-chain batching layer.
+As expected, average fold time, fuse time, and aggregate offchain work all increase with N , while the amortized onchain gas per admitted user decreases because the fixed batchsettlement cost is shared across more users. This trade-off
+is orthogonal to the verifier-gas benefit in EQ1: the latter
+
+comes from the recursive settlement path itself, whereas the
+confidential folding layer is the price paid for preserving witness confidentiality during batching. On the current hardware
+and parameter set, N = 16–32 offers the clearest practical
+compromise between amortization and processing delay, while
+N = 64–128 is better suited to scheduled onboarding windows
+in which a roughly 13–30 minute admission-settlement delay
+remains acceptable.
+3) PBS bottleneck profiling: Profiling further shows that,
+within the PBS stage, proof finalization remains the dominant
+subtask for large batches. In our implementation, final proof
+generation accounts for 84.3% of PBS-side latency at N = 64,
+while transcript fusion accounts for 10.8% and serialization
+plus transaction preparation accounts for the remaining 4.9%.
+Peak memory consumption remains within the 16 GB memory
+budget of the PBS device, indicating that the current PBS
+bottleneck is primarily compute-bound.
+VII. R ELATED W ORK
+ZK-AMS lies at the intersection of three research lines:
+identity admission and provisioning for decentralized platforms, privacy-preserving credential verification and onchain settlement, and scalable proof aggregation for highconcurrency verification. Existing works cover important parts
+of this design space, but they typically do not provide credibly
+anonymous admission, recursively aggregated batching with
+explicitly scoped witness-confidentiality guarantees, permissionless batch finalization, and anonymous account provisioning in one system.
+A. Web 3.0 Admission and Identity Provisioning
+Identity is increasingly treated as a platform primitive in decentralized systems, especially in DAO governance, decentral-
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+14
+
+Partially supported ◦ Not
+
+TABLE IV: Comparison of representative systems by system-level admission capabilities (• Fully supported
+supported)
+
+Representative Systems
+System-Level Capability
+
+[30]
+
+[31]
+
+[32]
+
+Credential-based privacy-preserving admission
+Ex-ante uniqueness / Sybil-resistant admission
+Permissionless batch admission workflow
+Witness-confidential recursive batching
+Constant-cost on-chain settlement per batch
+Anonymous post-admission account provisioning
+
+◦
+◦
+◦
+◦
+◦
+
+•
+◦
+◦
+◦
+◦
+◦
+
+◦
+◦
+◦
+◦
+◦
+
+ized social systems, and incentive-driven Web 3.0 applications.
+Existing approaches include SSI/DID/VC ecosystems such as
+Hyperledger Indy, Sovrin, and uPort [30], [31], [32], as well
+as blockchain-based identity-management and decentralized
+authorization frameworks [37], [36]. These systems provide
+useful support for identity issuance, selective disclosure, and
+decentralized authorization, but they generally stop at identity management, credential presentation, or policy enforcement rather than the full onboarding path from real-world
+uniqueness credential to anonymous-but-enforceable platform
+account provisioning.
+B. Privacy-Preserving Credential Verification and On-Chain
+Settlement
+A second line of work studies privacy-preserving verification of credentials and identity attributes in blockchain environments, including KYC-oriented zk systems, anonymous
+credential schemes, and threshold credential mechanisms [33],
+[34], [35], [38]. These works improve privacy compared with
+direct disclosure, but many still rely on per-user verification
+or trusted coordination, so settlement cost grows with the
+number of joiners. ZK-AMS instead targets batch-settled platform admission with predictable settlement cost under highconcurrency onboarding.
+C. Recursive Aggregation and Confidential Batching
+A third line of work uses proof aggregation and recursive
+composition to improve blockchain scalability [39], [40].
+These techniques reduce on-chain verification overhead by
+compressing multiple statements or execution steps into a
+single proof, but generic aggregation mechanisms do not by
+themselves solve the admission problem considered here. In
+particular, they usually do not address permissionless batching
+with explicitly stated witness-confidentiality scope or anonymous account provisioning after admission settlement. ZKAMS therefore treats recursive aggregation as part of a complete Web 3.0 admission workflow rather than as a standalone
+proof-compression primitive.
+Table IV summarizes representative systems from the perspective of system-level admission capabilities. Compared
+with prior works, ZK-AMS combines credential-based anonymous admission, ex-ante uniqueness enforcement, recursively aggregated batching with explicitly scoped witnessconfidentiality guarantees, constant-cost batch settlement, and
+anonymous post-admission provisioning. For the batchingconfidentiality row, ZK-AMS is marked as partial support
+
+[33]
+
+[34]
+
+[35]
+
+•
+
+•
+
+•
+
+◦
+◦
+◦
+◦
+
+◦
+◦
+◦
+◦
+
+◦
+◦
+◦
+◦
+
+Ours
+[36]
+
+[37]
+
+◦
+◦
+◦
+◦
+
+◦
+◦
+◦
+◦
+◦
+
+ZK-AMS
+•
+•
+•
+•
+•
+
+because the current prototype offers this property only under
+the explicit assumptions in Section V. This combination is
+the main distinction between ZK-AMS and existing identity,
+credential, or proof-aggregation systems.
+VIII. C ONCLUSION
+This paper presented ZK-AMS, a credibly anonymous
+admission infrastructure for Web 3.0 platforms that combines zero-knowledge credential validation, confidential offchain batch aggregation under explicit prototype assumptions,
+recursive proof aggregation, and anonymous Soul-Account
+provisioning. Our results show that recursive aggregation shifts
+settlement from per-user verification to approximately constant
+batch-level verification, yielding predictable on-chain cost
+while exposing the current bottlenecks in confidential-folding
+latency, the scoped confidentiality margin of the present sharerelease design, per-user ring-signature provisioning cost, and
+incentive-compatible handling of PBS misbehavior or share
+withholding.
+Future work will focus on reducing latency through
+pipelined batching and parallel preprocessing, strengthening
+permissionless finalization with verifiable share handling and
+better incentives, supporting credential revocation or periodic
+re-admission, and exploring account recovery for lost SoulAccount keys.
+A PPENDIX A
+Z ERO -K NOWLEDGE P ROOFS AND N OVA R ECURSIVE
+A RGUMENTS
+We utilize zkSNARK [41] to enable efficient verification of
+computational integrity. A zkSNARK scheme for an arithmetic
+circuit relation RC = {(x, W ) : C(x, W ) = 0} consists of
+three algorithms:
+λ
+• (pk, vk) ← zkSNARK.KEYGEN(1 , C): Generates a
+proving key pk and verification key vk given security
+parameter λ and circuit C.
+• π ← zkSNARK.PROVE(pk, x, W ): Outputs a succinct
+proof π attesting that the prover knows a witness W
+satisfying C(x, W ) = 0.
+• b ← zkSNARK.VERIFY(vk, x, π): Outputs b = 1 (accept) if π is valid for instance x, otherwise b = 0.
+We specifically adopt Groth16 [26] for its constant-size proofs
+and efficient on-chain verification process. However, relying
+on individual proofs implies that the number of proofs and
+the associated on-chain verification costs grow linearly with
+the frequency of user interactions. To alleviate this burden on
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+the blockchain, we employ Nova [12], a recursive argument
+system based on folding schemes, to aggregate multiple execution steps into a single verifiable instance, thereby enabling
+the verification of a batch of operations simultaneously.
+Nova transforms the standard Rank-1 Constraint System
+(R1CS) into a relaxed R1CS and further into a committed relaxed R1CS to support efficient folding with zero-knowledge.
+Let A, B, C ∈ Fm×ℓ be fixed constraint matrices. A relaxed
+instance is parameterized by a slack scalar u ∈ F and an
+error vector E ∈ Fm , together with a witness-dependent vector
+Z = (W, x, u), where W denotes the private witness and x
+denotes the public input. The relaxed R1CS constraint is:
+(A · Z) ◦ (B · Z) = u · (C · Z) + E
+
+(A.1)
+
+where ◦ denotes the Hadamard (entry-wise) product.
+Through a Non-Interactive Folding Scheme (NIFS), a Nova
+prover folds two relaxed instances (and their witnesses) into a
+single relaxed instance using a Fiat–Shamir challenge r ∈ F.
+Let Z1 = (W1 , x1 , u1 ) and Z2 = (W2 , x2 , u2 ) be the
+corresponding vectors, and define the cross-term (as in Nova’s
+folding construction)
+T = (AZ1 )◦(BZ2 )+(AZ2 )◦(BZ1 )−u1 ·(CZ2 )−u2 ·(CZ1 ).
+Then the folded slack and error are updated as
+u = u 1 + r · u2 ,
+E = E 1 + r · T + r 2 · E2 .
+
+(A.2)
+
+By iteratively applying this folding mechanism—merging the
+accumulated instance representing all prior steps with the new
+instance of the current step—Nova achieves Incrementally
+Verifiable Computation (IVC), effectively compressing a potentially unbounded sequence of steps into a single verifiable
+instance.
+To ensure zero-knowledge, Nova commits to witnessdependent components using an additively-homomorphic commitment scheme (Pedersen is a standard instantiation in Nova).
+In our system, to enable homomorphic evaluation under
+BGV MKHE, we instantiate the commitment scheme with
+an additively-homomorphic linear commitment over the BGV
+plaintext ring, which is introduced in Section 2 of the main
+paper. In the committed relaxed R1CS formulation, the public
+instance contains the commitments and public inputs, while
+the witness contains the openings. Concretely, we denote a
+(public) committed relaxed instance by I ≜ (E, u, W , x), and
+the corresponding witness by W ≜ (E, rE , W, rW ), where
+E (resp. W ) is a commitment to E (resp. W ) with opening
+randomness rE (resp. rW ).
+The NIFS protocol comprises the following algorithms
+which we utilize in our system design:
+λ
+• pp ← NIFS.ParaGen(1 ): Generates public parameters
+pp.
+• (pk, vk) ← NIFS.KeyGen(pp, (A, B, C)): Generates keys
+for the constraint system (A, B, C).
+• (I, W, T )
+← NIFS.Process(pk, (I1 , W1 ), (I2 , W2 )):
+Folds two instance-witness pairs (I1 , W1 ), (I2 , W2 ) into
+a single pair (I, W) and outputs a cross-term commitment T (a commitment to T under Com).
+
+15
+
+I ← NIFS.Verify(vk, I1 , I2 , T ): Deterministically computes the folded instance from public inputs and T to
+check consistency.
+Both the underlying zkSNARK and Nova’s folding scheme
+satisfy standard completeness, soundness, and zero-knowledge
+properties [12], ensuring that valid proofs can be generated if
+and only if a corresponding witness exists, without revealing
+the witness itself.
+•
+
+A PPENDIX B
+M ULTI -K EY H OMOMORPHIC E NCRYPTION
+Multi-Key Fully Homomorphic Encryption (MKHE) allows
+computation over data encrypted under different keys, ensuring
+that intermediate values and final results remain encrypted.
+A key feature is collaborative decryption: no single party
+can access the plaintext. In the current ZK-AMS prototype,
+recovering the folded batch result requires aggregating partial
+decryption shares from all secret keys involved in the finalized
+computation; the system does not instantiate a separate tunable
+t-out-of-N threshold-decryption layer.
+The MKHE scheme consists of the following algorithms:
+λ K
+• pp ← MKHE.ParamGen(1 , 1 ): Parameter generation.
+Generates public parameters pp including any public evaluation material needed for homomorphic multiplication,
+given the security parameter λ and the maximum number
+of parties K.
+• (pki , ski ) ← MKHE.KeyGen(pp): Key generation. Outputs a public key pki and a secret key ski for each party
+i ∈ {1, . . . , K}.
+• ci ← MKHE.Encrypt(pki , µ): Encryption. Encrypts a
+message µ under the public key pki for a party i ∈
+{1, . . . , K} to output a ciphertext vector ci .
+• ĉS ← MKHE.Add(c1 , c2 ) (denoted as c1 ⊕ c2 ): Homomorphic addition. Given two ciphertext vectors c1 , c2 ,
+outputs an evaluated ciphertext ĉS that decrypts to the
+sum of the underlying plaintexts.
+• ĉS ← MKHE.Multiply(M, c) (denoted as M · c): Homomorphic matrix multiplication. Given a plaintext matrix
+M and a ciphertext vector c, outputs an evaluated ciphertext ĉS that decrypts to the product of M and the
+underlying plaintext vector.
+• ĉS ← MKHE.Multiply(a, c) (denoted as a ⊙ c): Homomorphic scalar multiplication. Given a scalar a and a
+ciphertext vector c, outputs an evaluated ciphertext ĉS that
+decrypts to the product of a and the underlying plaintext
+of c.
+• ĉS
+← MKHE.HMul(c1 , c2 ) (denoted as c1 ⊗ c2 ):
+Ciphertext-ciphertext (entry-wise) multiplication. Outputs
+an evaluated ciphertext vector encrypting the Hadamard
+product of the underlying plaintext vectors.
+• pi ← MKHE.PartialDecrypt(ski , ĉS ): Partial decryption.
+Outputs a partial decryption share pi using the secret key
+ski for the evaluated ciphertext ĉS , where i is in the set
+of involved parties S.
+• µ ← MKHE.Combine({pi }i∈S , ĉS ): Decryption combination. Reconstructs the plaintext message µ by aggregating the partial shares {pi }i∈S from all parties in the
+set S associated with ĉS .
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+In ZK-AMS, we leverage a BGV-style multikey homomorphic encryption (MKHE) scheme [13], [14] to secure the
+witness folding process in Nova. Users (acting as parties in the
+BGV MKHE scheme) encrypt their private witnesses, enabling
+a distributed aggregation process to homomorphically fold
+them according to Nova constraints. This design eliminates
+the need for a centralized aggregation node with access to
+plaintext witnesses during folding; the PBS only reconstructs
+a randomized folded witness required to generate the final
+zkSNARK proof.
+This all-party share-release design is sufficient for the current prototype, but it also explains two limitations highlighted
+in the main manuscript. First, confidentiality is not claimed
+against a coalition consisting of the PBS and all but one
+participant in a finalized batch, because after share release
+that remaining participant’s folded plaintext contribution to
+the revealed accumulator may be isolated by subtracting the
+colluders’ known contributions. This is weaker than direct
+recovery of the participant’s entire original witness, but it
+still falls outside the confidentiality claim made in the paper.
+Second, malformed or withheld decryption shares can stall
+batch finalization; thus the present prototype relies on off-chain
+timeout and re-queue policies rather than publicly verifiable
+share validation or identifiable-abort mechanisms [23], [24].
+These limitations do not affect the correctness of already confirmed on-chain state, but they remain important deployment
+constraints of the current MKHE-backed batching layer.
+A PPENDIX C
+L INKABLE R ING S IGNATURES
+Linkable Ring Signatures (LRS) [17], [18] allow a signer
+to sign a message on behalf of a group anonymously while
+enabling the detection of signatures produced by the same
+signer. An LRS scheme consists of four algorithms:
+(pk, sk) ← LRS.KeyGen(1k ): Generates a public-private
+key pair given security parameter k.
+k n
+• σ ← LRS.Sign(1 , 1 , m, L, sk): Outputs a signature σ
+for message m using secret key sk and a ring of n public
+keys L (where the signer’s pk ∈ L).
+k n
+• b ← LRS.Verify(1 , 1 , m, L, σ): Outputs b = 1 (accept)
+if σ is a valid signature on m with respect to ring L,
+otherwise b = 0.
+k n
+• b ← LRS.Link(1 , 1 , m1 , m2 , σ1 , σ2 , L1 , L2 ): Outputs
+b = 1 if σ1 and σ2 were generated by the same signer
+(derived from the same sk), otherwise b = 0.
+•
+
+The scheme satisfies correctness, unforgeability, signer ambiguity, and linkability [15]. In ZK-AMS, we adopt the
+Multilayered Linkable Spontaneous Anonymous Group Signature (MLSAGS) [15], which utilizes a unique key image
+y0 to enforce linkability. The key image is computed as:
+y0 = sk · Hp (pk), where Hp is a deterministic hash function
+mapping to an elliptic curve point. Since y0 is mathematically
+bound to the signer’s key pair (sk, pk), it serves as a unique
+tag to prevent double-signaling (e.g., preventing one user
+from binding multiple accounts) without revealing the user’s
+identity.
+
+16
+
+A PPENDIX D
+E XTENDED S ECURITY P ROOF S KETCHES
+This section complements the system-security analysis in
+Section V of the main manuscript. Because ZK-AMS is a
+principled composition of existing primitives rather than a
+new primitive, the goal here is not to re-prove the adopted
+zkSNARK, Nova, MLSAGS, or MKHE constructions from
+first principles. Instead, we make the reduction logic behind
+the main manuscript’s six propositions more explicit by documenting which primitive-level security notion or deployment
+assumption each system-level guarantee ultimately relies on.
+A. Assumption-to-guarantee map
+For quick reference, the guarantees G1–G6 in the main
+manuscript rest on the following assumption paths.
+• G1 (Admission integrity): Assumptions A1–A3; reduction target is issuer/holder signature unforgeability or
+zkSNARK soundness.
+• G2 (Duplicate-admission resistance): Assumptions A1–
+A3; reduction target is collision resistance of hashPHC ,
+zkSNARK soundness, or violation of issuer-side uniqueness in A1.
+• G3 (Credibly anonymous provisioning): Assumptions
+A2–A3; reduction target is MLSAGS correctness, unforgeability, or anonymity.
+• G4 (Single-account enforcement): Assumption A2; reduction target is MLSAGS linkability.
+• G5 (Witness confidentiality during batching): Assumptions A2 and A5; reduction target is BGV-style MKHE
+semantic security together with the non-trivial coalition
+bound stated in A5.
+• G6 (Batch consistency and settlement integrity): Assumptions A2–A3; reduction target is Nova/NIFS transcript consistency in the Fiat–Shamir random-oracle setting or zkSNARK soundness.
+These mappings should be read as system-level composition
+claims. They show that any successful attack against a claimed
+ZK-AMS property would imply either a break of a named
+primitive or a failure of an explicitly stated deployment
+assumption.
+B. Per-goal proof sketches
+G1: Admission integrity.: Suppose an adversary causes
+the Verifier Contract to accept a batch containing an admission
+for which it does not know a valid PHC and corresponding
+holder key. The on-chain verifier accepts only if the submitted
+zkSNARK proof verifies with respect to the committed admission relation. Hence either the adversary has produced a false
+accepting proof for a statement outside the relation, which
+contradicts zkSNARK soundness, or the accepted statement
+itself passes the embedded credential checks. In the latter case,
+the adversary must have fabricated a valid issuer-authenticated
+PHC or a valid holder-binding statement without possessing
+the proper signing material, which contradicts the unforgeability of the underlying issuer or holder signature component.
+Assumption A1 then rules out the degenerate case in which
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+the credential is syntactically valid but no longer represents a
+legitimate personhood binding.
+G2: Duplicate-admission resistance.: The contract
+records hashPHC values as on-chain admission anchors and
+atomically rejects repeated anchors during settlement. Therefore, an accepted duplicate admission cannot arise from simply
+replaying the same public anchor after confirmation. A successful bypass must instead fall into one of three categories.
+First, two distinct PHCs may collide under hashPHC , contradicting collision resistance. Second, the proof may falsely certify that the batch relation is satisfied even though the duplicate
+check should fail, contradicting zkSNARK soundness. Third,
+the issuer may have violated the uniqueness trust root in A1
+by issuing multiple simultaneously valid PHCs for the same
+real-world person. Thus the duplicate-admission guarantee is
+exactly as strong as those underlying primitives and trust
+assumptions.
+G3: Credibly anonymous provisioning.: The Soul Registry accepts a provisioning request only if the submitted MLSAGS signature verifies against a ring of admitted seed public
+keys. Consequently, if an adversary causes acceptance without
+any admitted signer, it must have forged a valid MLSAGS
+signature or broken its correctness guarantees. Conversely,
+conditioned on the existence of some admitted signer, the identity of that signer is hidden among the ring members up to the
+anonymity bound of MLSAGS. Any non-negligible advantage
+in identifying which admitted seed key actually signed can
+therefore be transferred into an adversary against MLSAGS
+anonymity. This is why ZK-AMS can simultaneously claim
+public verifiability of authorization and signer anonymity.
+G4: Single-account enforcement.: In ZK-AMS, successful provisioning writes the MLSAGS key image y0 to the
+Soul Registry, and future provisioning attempts that reuse the
+same image are rejected. For a fixed seed signing secret key,
+MLSAGS linkability requires all valid signatures under that
+key to induce the same key image. Therefore, if an adversary
+manages to derive two distinct accepted Soul-Account bindings from the same admitted seed identity without triggering
+key-image reuse, the adversary would violate MLSAGS linkability. The system-level one-to-one provisioning guarantee is
+thus inherited directly from the primitive-level uniqueness of
+the MLSAGS key image.
+G5: Witness confidentiality during batching.: The confidentiality argument has two layers. Before decryption-share
+release, the PBS and any colluding users see only MKHE
+ciphertexts, transcript metadata, and public commitments. A
+standard hybrid argument can then replace the encrypted
+witnesses of the non-colluding users with encryptions of
+dummy values, one by one, without changing the adversary’s
+view except with negligible advantage; otherwise one obtains
+a distinguisher against BGV-style MKHE semantic security.
+After share release, the coalition also learns the final folded
+plaintext accumulator. At this point the protection no longer
+comes from ciphertext indistinguishability alone, but from the
+coalition bound in A5: because at least two participants remain
+outside the PBS coalition, subtracting the colluders’ known
+contributions reveals only a public linear combination of at
+least two unknown witness-dependent terms, not an isolated
+
+17
+
+term attributable to any one remaining participant. The current
+prototype therefore does not claim confidentiality against a
+coalition consisting of the PBS and all but one participant,
+because that excluded case may permit isolation of the last
+participant’s folded plaintext contribution after decryptionshare release. This is weaker than direct recovery of the
+participant’s entire original witness, but it is already outside
+the confidentiality claim proved here.
+G6: Batch consistency and settlement integrity.: Each
+folding step derives its Fiat–Shamir challenge from the public
+transcript. Therefore, if an adversary tampers with the commitments, ordering, or batch metadata while attempting to
+preserve the same folded state, it must either find a transcript
+inconsistency that survives the Nova/NIFS verification logic or
+create a false accepting final proof. More concretely, modifying any transcript-dependent element changes the challenge
+used to derive the next folded instance, unless the adversary breaks the random-oracle-based consistency assumptions
+behind the Fiat–Shamirized Nova/NIFS transcript. If the adversary instead submits an inconsistent accumulated state
+together with a proof that still passes contract verification, then
+zkSNARK soundness is violated. Hence transcript tampering
+that evades settlement checks reduces to one of these two
+primitive failures.
+Taken together, these extended sketches explain the intended
+meaning of the six propositions in the main manuscript: they
+are not standalone primitive-security theorems, but explicit
+composition claims showing how ZK-AMS inherits its guarantees from the cited building blocks plus the stated deployment
+assumptions.
+R EFERENCES
+[1] B. Cao, S. Xiao, L. Shi, T. Wang, J. Chen, J. Wang, X. Ling, H. Xu,
+S. Zhang, and E. Liu, “Web 3.0: A survey on the architectures, enabling
+technologies, applications, and challenges,” IEEE Commun. Surveys
+Tuts., vol. 27, no. 1, pp. 1–35, 2025.
+[2] T. Wang, S. Zhang, Q. Yang, and S. C. Liew, “Account service network:
+A unified decentralized Web 3.0 portal with credible anonymity,” IEEE
+Netw., vol. 37, no. 6, pp. 101–108, 2023.
+[3] Q. Liu, Q. Huang, F. Fan, H. Wu, and X. Tang, “Detecting sybil
+addresses in blockchain airdrops: A subgraph-based feature propagation
+and fusion approach,” in Proc. IEEE Int. Conf. Blockchain Cryptocurrency (ICBC), 2025.
+[4] E. G. Weyl, P. Ohlhaver, and V. Buterin, “Decentralized society: Finding
+Web3’s soul,” SSRN Electron. J., 2022, available at SSRN 4105763.
+[5] F. Piper, K. Wolf, and J. Heiss, “Privacy-preserving on-chain permissioning for kyc-compliant decentralized applications,” arXiv preprint
+arXiv:2510.05807, 2025.
+[6] J. P. Lauinger, S. Bezmez, J. Ernstberger, and S. Steinhorst, “Portal:
+Time-bound and replay-resistant zero-knowledge proofs for single signon,” in Proc. IEEE Int. Conf. Blockchain and Cryptocurrency (ICBC),
+2024, pp. 1–7.
+[7] M. Rosenberg, J. White, C. Garman, and I. Miers, “zk-creds: Flexible
+anonymous credentials from zkSNARKs and existing identity infrastructure,” in Proc. 2023 IEEE Symposium on Security and Privacy (SP),
+2023, pp. 790–808.
+[8] G. J. Mendis, Y. Wu, J. Wei, M. Sabounchi, and R. Roche’, “A
+blockchain-powered decentralized and secure computing paradigm,”
+IEEE Trans. Emerg. Top. Comput., vol. 9, no. 4, pp. 2201–2222, 2021.
+[9] A. Rasheed, R. N. Mahapatra, C. Varol, and K. Narashimha, “Exploiting
+zero knowledge proof and blockchains towards the enforcement of
+anonymity, data integrity and privacy (ADIP) in the IoT,” IEEE Trans.
+Emerg. Top. Comput., vol. 10, no. 3, pp. 1476–1491, 2022.
+[10] S. Mazumdar and S. Ruj, “Design of anonymous endorsement system
+in Hyperledger Fabric,” IEEE Trans. Emerg. Top. Comput., vol. 9, no. 4,
+pp. 1780–1791, 2021.
+
+ZK-AMS: CREDIBLY ANONYMOUS ADMISSION FOR WEB 3.0 PLATFORMS VIA RECURSIVE PROOF AGGREGATION
+
+[11] S. Adler, Z. Hitzig, S. Jain, et al., “Personhood credentials: Artificial
+intelligence and the value of privacy-preserving tools to distinguish who
+is real online,” arXiv preprint arXiv:2408.07892, 2024.
+[12] A. Kothapalli, S. Setty, and I. Tzialla, “Nova: Recursive zero-knowledge
+arguments from folding schemes,” in Proc. CRYPTO, 2022, pp. 359–388.
+[13] A. López-Alt, E. Tromer, and V. Vaikuntanathan, “On-the-fly multiparty
+computation on the cloud via multikey fully homomorphic encryption,”
+in Proc. ACM STOC, 2012, pp. 1219–1234.
+[14] Z. Brakerski, C. Gentry, and V. Vaikuntanathan, “(leveled) fully homomorphic encryption without bootstrapping,” in Proc. ITCS, 2012, pp.
+309–325.
+[15] S. Noether and A. Mackenzie, “Ring confidential transactions,” Ledger,
+vol. 1, pp. 1–18, 2016.
+[16] T. Wang, Z. Lin, S. Zhang, L. Shi, Q. Yang, and B. Düdder, “Linking
+souls to humans: Blockchain accounts with credible anonymity for
+Web 3.0 decentralized identity,” Proc. ACM Web Conf. (WWW), 2025,
+preliminary version.
+[17] R. L. Rivest, A. Shamir, and Y. Tauman, “How to leak a secret,” in
+Proc. ASIACRYPT, 2001, pp. 552–565.
+[18] W. Beullens, S. Katsumata, and F. Pintore, “Calamari and falafl: Logarithmic (linkable) ring signatures from isogenies and lattices,” in Proc.
+ASIACRYPT, 2020, pp. 464–492.
+[19] IPFS Documentation, “What is IPFS?” https://docs.ipfs.tech/concepts/
+what-is-ipfs/, accessed: 2026-02-08.
+[20] ——, “Ipns (interplanetary name system),” https://docs.ipfs.tech/
+concepts/ipns/, accessed: 2026-02-08.
+[21] C. Baum, I. Damgård, V. Lyubashevsky, S. Oechsner, and C. Peikert,
+“More efficient commitments from structured lattice assumptions,” in
+Proc. 11th Int. Conf. Secur. Cryptogr. Netw. (SCN), Sept. 2018, pp. 368–
+385.
+[22] N. P. Smart and F. Vercauteren, “Fully homomorphic SIMD operations,”
+Des. Codes Cryptogr., vol. 71, no. 1, pp. 57–81, 2014.
+[23] M. Stadler, “Publicly verifiable secret sharing,” in Proc. EUROCRYPT,
+1996, pp. 190–199.
+[24] Y. Ishai, R. Ostrovsky, and V. Zikas, “Secure multi-party computation
+with identifiable abort,” in Proc. CRYPTO, 2014, pp. 369–386.
+[25] Ethereum Foundation, “go-ethereum: Official Go implementation of the
+ethereum protocol,” https://github.com/ethereum/go-ethereum, 2024.
+[26] J. Groth, “On the size of pairing-based non-interactive arguments,” in
+Proc. EUROCRYPT, 2016, pp. 305–326.
+[27] Arkworks Contributors, “Arkworks: An ecosystem for developing and
+programming with zkSNARKs,” http://arkworks.rs, 2024.
+[28] Privacy Scaling Explorations, “Sonobe: A folding scheme library,” https:
+//github.com/privacy-scaling-explorations/sonobe/, 2024.
+[29] Monero Project, “Monero 0.13.0 released,” https://www.getmonero.org/
+2018/10/11/monero-0.13.0-released.html, 2018.
+[30] Hyperledger Indy Contributors, “Hyperledger indy documentation,”
+https://hyperledger-indy.readthedocs.io/en/latest/, 2024.
+[31] N. Naik and P. Jenkins, “Sovrin network for decentralized digital
+identity: Analysing a self-sovereign identity system based on distributed
+ledger technology,” in Proc. IEEE Int. Symp. Syst. Eng. (ISSE), 2021,
+pp. 1–7.
+[32] uPort Team, “uPort: Decentralized identity framework (archived),” https:
+//www.uport.me/, 2023.
+[33] S. R. Niya, S. Allemann, A. Gabay, and B. Stiller, “TradeMap: A
+FINMA-compliant anonymous management of an end-2-end trading
+market place,” in Proc. 15th Int. Conf. Netw. Service Manag. (CNSM),
+2019, pp. 1–5.
+[34] D. Rathee, G. V. Policharla, T. Xie, R. Cottone, and D. Song, “ZEBRA: SNARK-based anonymous credentials for practical, private and
+accountable on-chain access control,” Cryptology ePrint Archive, vol.
+Paper 2022/1234, 2022.
+[35] P. Pauwels, J. Pirovich, P. Braunz, and J. Deeb, “zkKYC in DeFi: An
+approach for implementing the zkKYC solution concept in decentralized
+finance,” Cryptology ePrint Archive, vol. Paper 2022/321, 2022.
+[36] WeBank, “WeIdentity: A decentralized identity solution,” https://
+weidentity.readthedocs.io/, 2025.
+[37] M. Popa, S. M. Stoklossa, and S. Mazumdar, “Chaindiscipline - towards
+a blockchain-iot-based self-sovereign identity management framework,”
+IEEE Trans. Serv. Comput., vol. 16, no. 5, pp. 3238–3251, 2023.
+[38] R. Shi, H. Feng, Y. Yang, F. Yuan, Y. Li, H. Pang, and R. H. Deng,
+“Threshold attribute-based credentials with redactable signature,” IEEE
+Trans. Serv. Comput., vol. 16, no. 5, pp. 3751–3765, 2023.
+[39] R. Shashidhara, R. C. Nair, and P. K. Panakalapati, “Promise of
+zero-knowledge proofs (ZKPs) for blockchain privacy and security:
+Opportunities, challenges, and future directions,” Security and Privacy,
+vol. 8, no. 1, p. e461, 2024.
+
+18
+
+[40] W. Li, C. Meese, H. Guo, and M. Nejad, “Aggregated zero-knowledge
+proof and blockchain-empowered authentication for autonomous truck
+platooning,” IEEE Trans. Intell. Transp. Syst., vol. 24, no. 9, pp. 9309–
+9323, 2023.
+[41] X. Sun, F. R. Yu, P. Zhang, Z. Sun, W. Xie, and X. Peng, “A survey on
+zero-knowledge proof in blockchain,” IEEE Netw., vol. 35, no. 4, pp.
+198–205, 2021.
+
+

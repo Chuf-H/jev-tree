@@ -1,0 +1,1946 @@
+TYPE Review
+PUBLISHED 02 June 2025
+DOI 10.3389/fbloc.2025.1598283
+
+OPEN ACCESS
+EDITED BY
+
+Qin Wang,
+Commonwealth Scientiﬁc and Industrial
+Research Organisation (CSIRO), Australia
+REVIEWED BY
+
+Raul Zambrano,
+Independent Researcher, New York, NY,
+United States
+Claudio Schifanella,
+University of Turin, Italy
+Alex Zariﬁs,
+University of Southampton, United Kingdom
+Michael Lustenberger,
+Zurich University of Applied Sciences,
+Switzerland
+Olivier Rikken,
+Delft University of Technology, Netherlands
+*CORRESPONDENCE
+
+Lukas Weidener,
+Lukas@weidener.eu
+RECEIVED 22 March 2025
+ACCEPTED 19 May 2025
+PUBLISHED 02 June 2025
+CITATION
+
+Weidener L, Laredo F, Kumar K and Compton K
+(2025) Delegated voting in decentralized
+autonomous organizations: a scoping review.
+Front. Blockchain 8:1598283.
+doi: 10.3389/fbloc.2025.1598283
+COPYRIGHT
+
+© 2025 Weidener, Laredo, Kumar and
+Compton. This is an open-access article
+distributed under the terms of the Creative
+Commons Attribution License (CC BY). The use,
+distribution or reproduction in other forums is
+permitted, provided the original author(s) and
+the copyright owner(s) are credited and that the
+original publication in this journal is cited, in
+accordance with accepted academic practice.
+No use, distribution or reproduction is
+permitted which does not comply with these
+terms.
+
+Delegated voting in decentralized
+autonomous organizations: a
+scoping review
+Lukas Weidener 1*, Fabio Laredo 2,3, Kishore Kumar 2 and
+Karlin Compton 2,4
+1
+BIO (bio.xyz), Berlin, Germany, 2Molecule AG (molecule.xyz), Berlin, Germany, 3Stem Cell Center
+Department, Ludwig Maximilian University of Munich, Munich, Germany, 4Department of Molecular
+Biosciences, Northwestern University, Evanston, IL, United States
+
+This study presents a systematic scoping review of delegated voting (DV) in
+decentralized autonomous organizations (DAOs), focusing on its governance
+implications, implementation forms, and challenges. DV refers to a mechanism
+through which token holders transfer their voting rights to other participants,
+often called delegates, who vote on their behalf. While DV is often adopted to
+address low participation and mitigate the cognitive burden of direct
+involvement, the existing literature highlights its potential to exacerbate
+centralization, particularly when whales or inﬂuential networks are
+disproportionate. This creates tension between the intended efﬁciency gains
+of the delegation and the unintended concentration of power. Various
+implementation models, including off-chain platforms (e.g., Snapshot), hybrid
+governance architectures, and token-based delegation systems, exhibit distinct
+trade-offs in transparency, cost, and adaptability. Although innovations such as
+quadratic voting, weighted delegation constraints, and reputation-based
+governance show promise for improving fairness and accountability, they also
+face vulnerabilities, such as gaming, collusion, and high implementation
+complexity. To explore the diverse approaches to DV, this review organizes
+and synthesizes key ﬁndings from recent scholarly publications examining its
+implementation, risks, and governance outcomes. Synthesizing insights from
+13 publications, this review identiﬁes key governance trade-offs, implementation
+patterns, and risks associated with DV. It also outlines future research directions,
+including multi-tiered governance structures and decision-support mechanisms,
+to guide more inclusive and context-aware DAO governance.
+KEYWORDS
+
+delegated voting, decentralized autonomous organization (DAO), governance,
+distributed ledger technology, blockchain technology
+
+1 Introduction
+Decentralized autonomous organizations (DAOs) represent a novel governance
+approach enabled by distributed ledger technology (DLT) that allows participants to
+collectively allocate resources, deﬁne operational frameworks, and pursue strategic
+objectives without centralized control (Kurniawan et al., 2022). Through the
+automation of governance processes via smart contracts, DAOs aim to establish
+transparent, tamper-resistant, and decentralized decision-making mechanisms (Fan
+et al., 2024). However, while smart contracts effectively encode and enforce predeﬁned
+rules, they do not inherently ensure good governance or mitigate risks associated with
+
+Frontiers in Blockchain
+
+01
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+delegations. This structure allows context-sensitive representation
+while preserving individual agency, offering a ﬂexible alternative to
+ﬁxed representative systems (Lu et al., 2024; Casella et al., 2022). By
+enabling governance delegation to trusted community members,
+DAOs aim to enhance informed decision making while reducing
+voter fatigue. Nevertheless, although delegation is designed to
+enhance governance efﬁciency, its effectiveness depends on how
+delegation pathways are structured and how accountability is
+maintained (Lu et al., 2024). DV introduces governance risks that
+require critical evaluation and if left unregulated could exacerbate
+the governance issues it was trying to solve. Collusion, vote selling,
+and delegate misbehavior are increasingly observed in DAOs, where
+top delegates consolidate disproportionate power through opaque
+delegation networks, allowing them to extract governance inﬂuence
+without robust accountability mechanisms (Lu et al, 2024; Gersbach
+et al., 2021; Austgen et al., 2023). Additionally, strategic nonparticipation, in which inﬂuential delegates abstain from voting
+to avoid taking responsibility for controversial decisions, further
+weakens governance integrity (Kurniawan et al., 2022). Empirical
+studies suggest that, in some DAOs, delegation monopolies lead to
+highly concentrated governance, where a small number of delegates
+control the majority of delegated voting power, effectively
+replicating centralized governance structures (Austgen et al.,
+2023; Fritsch et al., 2024). Moreover, governance extraction
+through technical proposals, where delegates use their voting
+power to manipulate protocol rules in their favor, has emerged as
+a critical governance vulnerability (Lu et al., 2024; Fritsch et al.,
+2024). Although reputation-based delegation systems have been
+proposed as solutions, their efﬁcacy in preventing
+disproportionate inﬂuence remains uncertain, particularly because
+reputational metrics can be manipulated or gamed by inﬂuential
+stakeholders (Kitzler et al., 2023).
+While DV offers a potential pathway to balance participation and
+efﬁciency, its implementation varies widely across DAOs, and its
+implications remain insufﬁciently explored in the literature. This
+study conducts a systematic scoping review of DV in DAOs,
+synthesizing the existing scientiﬁc literature to assess its governance
+implications. Speciﬁcally, it examines how DV impacts governance
+functionality, the various implementation forms that facilitate
+delegation, best practices for optimizing delegation mechanisms, and
+the systemic challenges that impede their success. Through this analysis,
+this study aims to provide a comprehensive evaluation of the strengths,
+limitations, and trade-offs of DV systems in DAOs, offering insights
+that may inform governance innovation and contribute to more
+equitable, transparent, and resilient decentralized decision-making
+frameworks.
+
+misaligned incentives, coordination failures, or governance
+manipulation (Rikken et al., 2019). The vulnerabilities in early
+DAO implementations became evident in the collapse of The
+DAO in 2016, which suffered from an exploit that drained
+approximately tens of millions of dollars worth of Ether, leading
+to the controversial hard fork of the Ethereum blockchain (Mehar
+et al., 2017). Since then, the number of DAOs has grown, with
+prominent examples such as Uniswap DAO, MakerDAO, and Aave
+DAO collectively managing billions in decentralized ﬁnance assets
+and facilitating protocol upgrades, treasury allocations, and public
+goods funding (Kitzler et al., 2023). While decision-making lies at
+the core of DAO governance, it has received relatively limited
+attention in prior frameworks, despite its centrality to the
+operationalization of governance in blockchain systems (Schädler
+et al., 2023). Recent work has emphasized the importance of
+systematically analyzing decision-making processes to better
+understand the distribution and execution of governance power
+(Schädler et al., 2023).
+Despite their promise of community-driven governance, DAOs
+face persistent structural and procedural inefﬁciencies that contradict
+their decentralized ideals. Low voter participation, driven by voter
+fatigue, governance complexity, and the cognitive burden of informed
+decision-making, has led to governance centralization in the hands of a
+few highly active participants (Özdemir et al., 2024). Empirical
+analyses reveal that in many DAOs, governance decisions are
+determined by less than ten percent of eligible token holders,
+raising concerns about legitimacy and representativeness (Sharma
+et al., 2024). This trend enables delegation monopolies, in which a
+small number of highly engaged actors, often early investors or core
+contributors, wield a disproportionate inﬂuence (Lu et al., 2024).
+Additionally, token-weighted voting systems, where governance
+power is directly proportional to token holdings, reinforce
+governance asymmetries by enabling well-resourced entities or
+“whales” to disproportionately shape DAO policies, sometimes at
+odds with the broader community’s interests (Kurniawan et al.,
+2022). Further complicating governance dynamics, stakeholder
+apathy, governance lethargy, and a high rate of abstentions
+contribute to decision-making stagnation, particularly in large and
+complex DAOs where proposal evaluation requires signiﬁcant
+expertise (Gersbach et al., 2021). Furthermore, DAO governance
+extends beyond formal decision-making procedures to include
+essential governance functions, such as member onboarding and
+offboarding, role accountability, and contributor coordination,
+which are often underexamined in both research and
+implementation despite their importance for organizational
+resilience (Schädler et al., 2023).
+To address these governance inefﬁciencies, many DAOs have
+adopted delegated voting (DV) as a mechanism to balance efﬁciency
+with decentralization (Fan et al., 2024). DV allows token holders to
+transfer their voting power to trusted representatives, who make
+governance decisions on their behalf (Kurniawan et al., 2022). This
+model can be considered a form of liquid democracy that blends
+elements of direct and representative democracy: token holders can
+vote directly on proposals or delegate their voting power to others,
+with the ability to revoke or reassign this delegation at any time (Lu
+et al., 2024; Gersbach et al., 2021; Ding et al., 2023a). While many
+DAOs implement DV in a more static manner, liquid democracy
+enables dynamic, real-time, and potentially issue-speciﬁc
+
+Frontiers in Blockchain
+
+2 Objective
+This study aims to synthesize and provide a comprehensive
+overview of the existing scientiﬁc literature on DV in DAOs.
+Speciﬁcally, it examines the impact on DAO governance, forms
+of implementation (e.g., tools), best practices, and challenges. The
+central research question guiding this review is:
+What is the current state of academic literature on DV in DAOs,
+particularly regarding its implementation, associated best practices,
+and key governance challenges?
+
+02
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+3.2 Study selection
+
+In this review, governance refers to formal and informal
+structures, processes, and institutions through which collective
+decisions are made and implemented within a DAO (Rhodes,
+2007). This includes mechanisms for participation, rule-setting,
+dispute resolution, and oversight. Rather than equating
+governance with procedural formality or power distribution, it is
+more useful to understand the capacity of a system to formulate and
+enforce decisions effectively while remaining adaptive to evolving
+institutional contexts (Fukuyama, 2016). Governance frameworks
+shape how authority is exercised and decisions reached, but they also
+interact with broader patterns of inﬂuence and legitimacy, including
+the conditions under which accountability may emerge (Jessop,
+1998; Peters, 2012). Governance inefﬁciencies are understood
+here as conditions that hinder effective, inclusive, or transparent
+decision making, such as low participation, procedural opacity,
+excessive concentration of voting power, or delegate behavior
+that undermines collective intent.
+
+Following the database search, the results were exported to
+literature management software (Mendeley Elsevier). The
+duplicate entries were systematically identiﬁed and removed.
+Subsequently, titles and abstracts of the remaining publications
+were screened to assess their relevance to the study objectives.
+Publications were excluded based on the following criteria:
+published before 2008, lacking thematic relevance to the research
+focus (e.g., studies not mentioning blockchain technology or
+decentralized autonomous organizations), written in languages
+other than English, examining governance models unrelated to
+the scope of the study, or lacking accessible full-text availability.
+Eligible publications were subjected to a full-text review to validate
+their alignment with the research objectives. To enhance the rigor
+and comprehensiveness of the review, reference mining was
+conducted to identify additional relevant studies cited within key
+publications. Given that this research speciﬁcally aimed to include
+pre-print articles due to the emerging and interdisciplinary nature of
+the topic, all pre-print articles adhering to certain academic
+standards and quality (e.g., inclusion of references and clear
+methodology) were treated as publications. Articles that failed to
+meet these quality standards, such as those lacking references or
+presenting purely opinion-based content, were excluded from
+the analysis.
+
+3 Methodology
+To identify scientiﬁc publications relevant to the study objective,
+a systematic literature review was conducted following PRISMA-ScR
+methodology (Tricco et al., 2018). Recognizing the interdisciplinary
+nature of DAOs, the review utilized seven databases: ACM Digital
+Library, arXiv, IEEE Xplore, Web of Science, Scopus, SSRN, and
+Google Scholar. Given the prominence of preprint publications in
+the ﬁeld of distributed ledger technology (DLT), which is
+fundamental to DAOs, databases such as arXiv, SSRN, and
+Google Scholar were explicitly selected to capture relevant studies
+that may not yet be peer-reviewed. The search covered 17 years,
+beginning in 2008 with the publication of the Bitcoin whitepaper,
+and ending on 31 December 2024. No scoping review protocol had
+been published before conducting the study. Given the theoretical
+nature of this research, which did not involve human or animal
+subjects, ethical approval was deemed nonapplicable.
+
+3.3 Data extraction
+Data from all studies deemed relevant and included in the
+analysis were systematically organized into a table using Google
+Sheets. For each publication, the following information was
+extracted: title, year, authors, methodology, key ﬁndings, impact
+on governance, implementation forms (e.g., tools), best practices,
+and challenges. The synthesis of governance-related categories
+emerged inductively from the extracted data. These categories
+were not predetermined but developed iteratively through a
+thematic analysis of recurring concepts across the selected
+publications.
+
+3.1 Search strategy
+Boolean operators (“AND,” “OR,” “NOT”) were employed to
+reﬁne and specify the search results. The search utilized the
+following keywords: “Decentralized Autonomous Organizations,”
+“DAOs,” “DAO voting systems,” “Smart contract governance,”
+“Blockchain-based organizations,” “DAO tokenomics,” “Tokenweighted voting,” “Governance tokens,” “Delegated voting,”
+“Liquid democracy,” “Delegative democracy,” “Proxy voting,”
+“Voting mechanisms,” “Decentralized governance,” “Blockchain
+governance,”
+“Decentralized
+decision-making,”
+“DAO
+governance,” “Token-based voting,” “Blockchain,” “Distributed
+ledger technology,” “Cryptographic voting,” “Voting protocols,”
+“Smart contracts,” “Consensus algorithms,” “Governance
+frameworks,” “Participatory governance,” “Collective decisionmaking,” “Crowdsourced decision-making,” “Organizational
+governance,” “Distributed organizations,” and “Delegation
+mechanisms.” To address the limitations of advanced search
+capabilities across some databases (e.g., Google Scholar, SSRN,
+arXiv), multiple shorter search queries were conducted.
+
+Frontiers in Blockchain
+
+4 Results
+The systematic search of seven electronic databases yielded
+1747 potentially relevant publications. Four additional records
+were identiﬁed using reference mining. After removing
+464 duplicates, 1283 unique publications remained for title and
+abstract screening, leading to the exclusion of 1004 records. Of the
+279 publications retrieved for full-text review, 266 did not meet the
+inclusion criteria due to a lack of thematic relevance (e.g., focused on
+general decentralization without addressing governance or
+delegation; n = 158), limited focus on DAOs (e.g., only brieﬂy
+mentioned DAOs as examples without substantial analysis, focused
+primarily on traditional organizations, or used the term without
+engaging with DAO-speciﬁc governance structures; n = 84), or
+limited focus on DV (e.g., referenced delegation only brieﬂy or as
+a secondary topic, without substantive theoretical discussion or
+empirical analysis; n = 37). Consequently, 13 publications were
+
+03
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+FIGURE 1
+
+Flow chart of the systematic search and selection process as adaptation from PRISMA (Tricco et al., 2018).
+
+Tamai and Kasahara 2024, Ding et al., 2023a. These publications
+offered comparative analyses of existing voting mechanisms or
+proposed new governance models to address challenges, such as
+whale dominance and fairness in delegation. Finally, three studies
+used mixed-method approaches (Sharma et al., 2024; Lu et al., 2024)
+or qualitative research (Gilson and Bouraga, 2024). These
+investigations incorporated empirical case studies, expert
+interviews, and theoretical assessments to explore the DAO
+governance structures, delegation mechanisms, and decisionmaking efﬁciency. Table 1 presents a detailed summary of the
+included studies.
+
+determined to be relevant to the study objectives and included in the
+ﬁnal analysis. Figure 1 shows a ﬂow diagram illustrating the search
+and selection process.
+
+4.1 Study characteristics
+Seven of the included publications were published in 2024, four
+in 2023, and one each in 2022 and 2021, highlighting the recency of
+the topic. The most common study design was quantitative research,
+with seven studies (Kitzler et al., 2023, Gersbach et al., 2021, Austgen
+et al., 2023; Schmid and Shestakov, 2024; Monteiro et al., 2024; Han
+et al., 2023; Casella et al., 2022) employing empirical analyses, data
+modeling, or experimental methods. These studies primarily
+investigated voting power distributions, delegation effects, and
+empirical assessments of governance efﬁciency in DAOs. Three
+studies adopted a theoretical approach (Kurniawan et al., 2022,
+
+Frontiers in Blockchain
+
+4.2 Impact on governance
+DV impacts DAO governance across ﬁve closely interconnected
+categories, efﬁciency, centralization, inclusivity, transparency, and
+
+04
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+TABLE 1 Identiﬁed and included studies following the systematic literature review.
+
+Title (Year)
+
+Authors
+
+Key Findings
+
+Enhancing the Democratic Nature of Voting Processes Within
+Decentralized Autonomous Organizations
+
+Gilson and Bouraga (2024)
+
+• Token concentration impacts democracy in DAOs
+• Quadratic voting enhances democracy when implemented
+correctly
+
+• Liquid democracy improves representation but has mixed effects
+Future of Algorithmic Organization: Large Scale Analysis of
+Decentralized Autonomous Organizations (DAOs)
+
+Sharma et al. (2024)
+
+• DAOs face scalability challenges in governance systems
+• Transparent on-chain governance correlates with higher perceived
+trust
+
+• Large-scale analysis highlights efﬁciency trade-offs
+Blockchain Governance and Liquid Democracy – Quantifying
+Decentralization in Gitcoin and Internet Computer
+
+Schmid and Shestakov (2024)
+
+• Voting power in liquid democracy is highly centralized in Gitcoin
+• Internet Computer shows lower centralization levels
+• Delegation skews voting power distribution
+
+Exploring off-chain voting and blockchain in decentralized
+autonomous organizations
+
+Monteiro et al. (2024)
+
+• Off-chain voting reduces transaction costs for DAOs
+• Off-chain voting shows meaningful participation
+• Off-chain voting is cheaper and may speed up proposals
+
+Voting Mechanism Selection for Decentralized Autonomous
+Organizations
+
+Kurniawan et al. (2022)
+
+• Criteria for voting mechanism selection depend on DAO goals
+• DV offers ﬂexibility but risks centralization
+• On-chain mechanisms enhance accountability
+
+DAO Voting Mechanism Resistant to Whales and Collusion Problems
+
+Tamai and Kasahara (2024)
+
+• New mechanism minimizes whale dominance in voting
+• Reduces risk of collusion in DAO governance
+• Incentivizes broader participation in decision-making
+
+The Impact of Delegation Mechanism on the Governance of
+Decentralized Autonomous Organizations
+
+Lu et al. (2024)
+
+• Delegation improves efﬁciency in DAO governance
+• Concentrated delegation can reduce decentralization
+• Transparency in delegation decisions is crucial
+
+Analyzing voting power in decentralized governance: Who controls
+DAOs?
+
+Fritsch et al. (2024)
+
+• Delegation networks centralize voting power in key stakeholders
+• Top delegates control most of the decision-making power
+• Incentives are needed to balance power among participants
+
+DAO Governance
+
+Han et al. (2023)
+
+• Governance token concentration limits participation
+• Whales dominate decision-making in smaller DAOs
+• Participation incentives can counter centralization
+
+The Governance of Decentralized Autonomous Organizations: A
+Study of Contributors’ Inﬂuence, Networks, and Shifts in Voting
+Power
+
+Kitzler et al. (2023)
+
+• Contributor networks inﬂuence decision-making
+• DV ampliﬁes power imbalances
+• Reputation systems mitigate centralization risks
+
+Voting Schemes in DAO Governance
+
+Ding et al. (2023a)
+
+• Token-based voting is dominant but prone to centralization
+• Quadratic voting can balance stakeholder inﬂuence
+• Liquid democracy enhances ﬂexibility but requires transparency
+
+Liquid Democracy: Two Experiments on Delegation in Voting
+
+Casella et al. (2022)
+
+• Liquid democracy balances direct and DV
+• Delegation increases voter participation in complex systems
+• Outcomes depend on informed delegates
+
+Vote Delegation and Misbehavior
+
+Gersbach et al. (2021)
+
+• Misbehavior risks increase with opaque delegation
+• With moderate levels of misbehavior, conventional voting
+outperforms delegation
+
+• Preventing manipulation requires careful design
+
+contrast, dynamic delegation approaches, such as liquid
+democracy, can boost inclusivity by enabling ﬂexible vote
+reassignments and allowing participants to delegate their votes
+based on expertise or alignment of interests (Casella et al., 2022).
+However, exploitative behaviors by delegates, such as vote selling,
+collusion, and deliberate abstention have been observed in DAO
+governance, where powerful delegates strategically avoid voting to
+manipulate outcomes or consolidate long-term inﬂuence (Gersbach
+et al., 2021). Studies have highlighted the critical importance of
+transparency in delegation processes, showing that well-documented
+procedures such as tracking delegation records, maintaining auditable
+voting logs, ensuring publicly accessible governance documentation,
+and establishing clear delegation pathways enhance trust and promote
+broader stakeholder engagement (Lu et al., 2024; Fritsch et al., 2024;
+
+fairness, and their respective speciﬁcations. Delegation can
+streamline decision-making, especially when off-chain processes
+reduce costs (Sharma et al., 2024; Lu et al., 2024; Gersbach et al.,
+2021; Monteiro et al., 2024; Casella et al., 2022). Some authors also
+link these beneﬁts to broader organizational scale (Mehar et al.,
+2017). However, studies also note that high efﬁciency depends on
+inclusivity and transparency in the delegation processes (Sharma
+et al., 2024, Lu et al, 2024). Simultaneously, DV can exacerbate
+centralization if large stakeholders or inﬂuential networks
+consolidate power (Kitzler et al., 2023; Fritsch et al., 2024; Gilson
+and Bouraga 2024, Schmid and Bouraga, 2024, Ding et al., 2023a,
+Casella et al., 2022), especially through token-weighted systems that
+grant disproportionate inﬂuence to major holders (Schmid and
+Shestakov 2024; Monteiro et al., 2024, Ding et al., 2023a. By
+
+Frontiers in Blockchain
+
+05
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+TABLE 2 Delegated Voting’s impact on governance.
+
+Category
+
+Speciﬁcations
+
+Efﬁciency
+
+• DV can improve efﬁciency when exploitative behaviors (e.g., vote selling or delegate collusion) are limited (Lu et al., 2024; Gersbach et al.,
+2021; Casella et al., 2022)
+
+• Improves voter participation in off-chain systems by reducing costs (Monteiro et al., 2024)
+• Streamlines decision-making but depends on inclusivity and transparency (Sharma et al., 2024; Lu et al., 2024)
+Centralization
+
+• DV often centralizes governance power in a few key stakeholders (Kitzler et al., 2023; Fritsch et al., 2024; Gilson and Bouraga, 2024; Schmid
+and Shestakov, 2024)
+
+• Delegation networks can lead to skewed voting power distribution (Fritsch et al., 2024; Schmid and Shestakov, 2024; Casella et al., 2022)
+• Token-weighted delegation prioritizes large stakeholders over inclusivity (Schmid and Shestakov, 2024; Han et al., 2023, Ding et al., 2023a)
+Inclusivity
+
+• Inclusivity improves with dynamic delegation mechanisms like liquid democracy (Casella et al., 2022)
+• Strategic behavior by delegates, such as deliberate abstention, can undermine fairness in governance (Gersbach et al., 2021; Tamai and
+Kasahara, 2024)
+
+Transparency
+
+• Transparency in delegation builds trust and voter participation (Lu et al., 2024; Han et al., 2023)
+• Limited transparency in off-chain systems undermines governance outcomes (Monteiro et al., 2024)
+
+Fairness
+
+• DV improves fairness when delegation is capped or limited (Tamai and Kasahara, 2024, Ding et al., 2023a)
+• Poorly implemented delegation undermines fairness and decision-making (Sharma et al., 2024)
+
+models that integrate on-chain execution with off-chain voting
+mechanisms, leveraging off-chain decision-making for ﬂexibility
+and cost reduction, while preserving on-chain transparency and
+immutability for ﬁnal governance execution (Kurniawan et al., 2022,
+Schmid and Shestakov 2024, Ding et al., 2023a). Token-based
+delegation ties voting power to token holdings (Kurniawan et al.,
+2022, Kitzler et al., 2023; Sharma et al., 2024; Lu et al., 2024; Fritsch
+et al., 2024; Schmid and Shestakov 2024; Han et al., 2023, Ding et al.,
+2023a), with capping delegation being explored to prevent whale
+dominance (Tamai and Kasahara, 2024). More dynamic models
+include real-time vote reassignments (Schmid and Shestakov, 2024;
+Casella et al., 2022) and multi-layer delegation structures in which
+delegates act as intermediaries for smaller holders (Gersbach et al.,
+2021). Some DAOs exhibit governance patterns in which
+contributors with sustained engagement and network centrality
+gain inﬂuence beyond token holdings (Kitzler et al., 2023).
+However, formal reputation-based delegation systems that assign
+voting power through predeﬁned community metrics have not been
+widely implemented (Kitzler et al., 2023). The literature analysis
+suggests a range of tools and mechanisms that shape DV (Tamai and
+Kasahara, 2024; Schmid and Shestakov, 2024; Monteiro et al., 2024;
+Casella et al., 2022). Cryptographic mechanisms such as time-locked
+voting, Sybil-resistant quadratic voting, and bribery-resistant cost
+modeling aim to increase security and deter collusion (Tamai and
+Kasahara, 2024; Schmid and Shestakov, 2024). Real-time vote
+tracking (Casella et al., 2022) increases transparency, whereas
+simulated models assess potential delegate behaviors under
+various scenarios (Gersbach et al., 2021). Table 3 summarizes
+these categories and their speciﬁcations.
+
+Monteiro et al., 2024; Han et al., 2023). Some studies suggest that
+implementing mechanisms to reduce delegate dominance, such as
+quadratic voting, weighted delegation constraints, and reputationbased governance, may improve fairness by counteracting power
+centralization (Tamai and Kasahara 2024, Ding et al., 2023a).
+Quadratic voting allows participants to express the intensity of their
+preferences by allocating votes quadratically, meaning that casting
+multiple votes costs increasingly more tokens, thereby limiting the
+disproportionate inﬂuence of large stakeholders and improving the
+representational balance (Tamai and Kasahara 2024, Ding et al., 2023a).
+Reputation-based governance assigns voting power based on
+participants’ historical contributions, performance, or peer
+endorsements, thereby aligning inﬂuence with demonstrated
+commitment rather than token holdings (Tamai and Kasahara 2024,
+Ding et al., 2023b). Additionally, poorly designed delegation
+mechanisms have been shown to contribute to governance
+inefﬁciencies and the overconcentration of voting power among a
+few inﬂuential delegates, undermining decision-making inclusivity
+(Kurniawan et al., 2022; Fritsch et al., 2024). In synthesis, the
+evidence suggests that DV holds promise for enhancing
+participation and decision-making efﬁciency, but it also raises
+ongoing concerns regarding concentrated power, lack of
+transparency, and uneven representation. The categories and
+speciﬁcations associated with each aspect of DV are summarized
+in Table 2.
+
+4.3 Implementation forms
+The included studies highlighted multiple approaches to
+implementing DV in DAOs, designed to balance efﬁciency,
+security, and community trust. On-chain governance tools
+(Kurniawan et al., 2022, Sharma et al., 2024; Lu et al., 2024;
+Fritsch et al., 2024; Schmid and Shestakov, 2024, Ding et al.,
+2023a) dominate many DAO architectures because of their
+capacity for automated execution, whereas off-chain platforms
+such as Snapshot reduce transaction costs, which can encourage
+greater participation (Kurniawan et al., 2022; Monteiro et al., 2024,
+Ding et al., 2023b). Several DAOs implement hybrid governance
+
+Frontiers in Blockchain
+
+4.4 Challenges
+Despite the potential beneﬁts of DV, the included studies
+underscored ﬁve persistent challenges: centralization, lack of
+transparency, limited participation, lack of accountability, and
+implementation complexity. Centralization arises when delegation
+intensiﬁes token concentration, enabling dominant stakeholders or
+top delegates to exert an outsized inﬂuence on communal decisions
+
+06
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+TABLE 3 Implementation forms of delegated voting in DAOs.
+
+Category
+
+Speciﬁcations
+
+Implementation Approach
+
+• On-chain governance is predominant (Kurniawan et al., 2022, Sharma et al., 2024; Lu et al., 2024;
+Fritsch et al., 2024; Schmid and Shestakov, 2024, Ding et al., 2023a)
+
+• Off-chain platforms (e.g., Snapshot) facilitate DV, reducing costs (Kurniawan et al., 2022; Schmid
+and Shestakov, 2024; Monteiro et al., 2024, Ding et al., 2023a)
+
+• Hybrid solutions combine on-chain and off-chain methods (Kurniawan et al., 2022; Schmid and
+Shestakov, 2024, Ding et al., 2023a)
+Delegation Model
+
+• Token-based delegation, with governance inﬂuence proportional to token holdings (Kurniawan
+et al., 2022, Kitzler et al., 2023; Sharma et al., 2024; Lu et al., 2024; Fritsch et al., 2024; Schmid and
+Shestakov 2024; Han et al., 2023, Ding et al., 2023a)
+• Weighted or capped delegation to prevent whale dominance (Tamai and Kasahara, 2024)
+• Dynamic delegation with real-time vote reassignments (Schmid and Shestakov, 2024; Casella et al.,
+2022)
+• Multi-layer delegation structures, where delegates act as intermediaries (Gersbach et al., 2021)
+• Reputation/community-based pathways shaped by network position (Kitzler et al., 2023)
+
+Tools & Mechanisms
+
+• Snapshot for off-chain voting with minimal on-chain fees (Monteiro et al., 2024)
+• Neuron-based delegation system (Internet Computer) (Schmid and Shestakov, 2024)
+• Cryptographic methods to deter collusion (Tamai and Kasahara, 2024)
+• Real-time vote tracking to improve transparency (Casella et al., 2022)
+• Simulated models testing delegate behavior (Gersbach et al., 2021)
+
+suggesting that any governance model must holistically address
+each concern. Table 4 provides a concise overview of the
+challenges encountered in the included studies.
+
+(Kitzler et al., 2023; Sharma et al., 2024; Gilson and Bouraga, 2024;
+Schmid and Shestakov, 2024; Ding et al., 2023a; Casella et al., 2022).
+Token-weighted delegation can exacerbate this effect, shifting the
+balance of power away from smaller token holders and thus limiting
+broader inclusivity (Kurniawan et al., 2022; Lu et al., 2024). This
+dynamic not only risks reducing the diversity of thought in
+governance processes but also erodes trust as participants may
+perceive that their votes are overshadowed by concentrated
+voting blocs (Kitzler et al., 2023; Tamai and Kasahara, 2024;
+Schmid and Shestakov, 2024). A lack of transparency compounds
+centralization risks by making delegate decisions, voting records,
+and delegation chains opaque (Kurniawan et al., 2022; Han et al.,
+2023, Ding et al., 2023a; Casella et al., 2022). Moreover, tension
+persists between the desire for greater oversight and the need to
+protect privacy—an ongoing debate highlighted by the difﬁculty of
+balancing publicly accessible voting records against potential privacy
+violations (Kitzler et al., 2023; Lu et al., 2024). Limited participation
+further skews outcomes, especially when smaller stakeholders lack
+incentives or feel apathetic toward the voting process (Kitzler et al.,
+2023; Sharma et al., 2024; Lu et al., 2024; Gersbach et al., 2021;
+Fritsch et al., 2024; Han et al., 2023). These conditions often lead to
+the disenfranchisement of those without signiﬁcant token holdings,
+and delegates may not always act in the best interests of their
+constituents (Schmid and Shestakov, 2024, Ding et al., 2023a). A
+lack of accountability compounds the above issues, with minimal
+safeguards permitting delegates to privilege personal agendas or
+engage in collusive behavior (Lu et al., 2024; Gersbach et al., 2021;
+Tamai and Kasahara, 2024; Monteiro et al., 2024). Implementation
+complexity remains a key barrier for effective governance. Beyond
+the technical challenge of ensuring that delegates are well informed
+(Sharma et al., 2024; Gilson and Bouraga, 2024; Casella et al., 2022),
+reliance on off-chain platforms can introduce higher costs and
+scalability limitations (Kurniawan et al., 2022; Tamai and
+Kasahara, 2024; Monteiro et al., 2024). These challenges are
+particularly problematic for DAOs seeking both rapid decision
+making and widespread stakeholder inclusion. Together, these
+ﬁve challenges underscore the multifaceted nature of DV,
+
+Frontiers in Blockchain
+
+4.5 Best practices
+The identiﬁed and selected studies proposed several best
+practices to enhance DV systems in DAOs, including
+transparency, accountability, limiting centralization, education,
+implementation, and adaptability. Transparency is a fundamental
+requirement for building community conﬁdence in DV. Several
+authors highlight how publicly accessible delegate actions, thorough
+recordkeeping, and clear tracking of vote distribution improve
+accountability while reducing opportunities for collusion (Sharma
+et al., 2024; Lu et al., 2024, Gersbach et al., 2021). In tandem, welldeﬁned voting power metrics and explicit information on
+contributor roles can enable voters to make more informed
+choices, thereby boosting overall trust (Kitzler et al., 2023; Fritsch
+et al., 2024, Ding et al., 2023a). Reputation-based systems, in
+particular, provide a means to reward responsible delegates and
+penalize misconduct (Gersbach et al., 2021; Han et al., 2023).
+However, DAOs deﬁne what constitutes misconduct based on
+their governance frameworks as no universal enforcement
+standard exists (Fan et al., 2024; Rikken et al., 2019). Public
+disclosure of voting strategies or records adds another layer of
+oversight, offering tangible proof of how delegates act on behalf
+of their constituents (Tamai and Kasahara, 2024; Casella et al.,
+2022). A recurring concern among the studies is limiting
+centralization, which typically manifests when a small subset of
+high-stake token-holders wields outsized inﬂuence. Capping or
+restricting delegate voting power, whether through formal limits
+or gradual weighting adjustments, fosters more equitable
+representation (Tamai and Kasahara, 2024; Fritsch et al., 2024;
+Han et al., 2023; Casella et al., 2022). Reputation-based
+delegation could further mitigate power imbalances by
+introducing nonmonetary criteria into the governance process
+
+07
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+TABLE 4 Identiﬁed challenges of delegated voting in DAOs.
+
+Category
+
+Speciﬁcations
+
+Centralization
+
+• Delegation fosters centralization, intensiﬁes token concentration, and allows top delegates or inﬂuential contributors to dominate
+governance (Kitzler et al., 2023; Sharma et al., 2024; Gilson and Bouraga, 2024; Schmid and Shestakov, 2024; Ding et al., 2023a; Casella
+et al., 2022)
+• Token-weighted delegation risks over-centralizing governance, reducing inclusivity (Kurniawan et al., 2022; Özdemir Sönmez et al.,
+2024)
+
+Lack of Transparency
+
+• Opaque delegate decisions, records, and long delegation chains undermine community trust and reduce transparency (Kurniawan
+et al., 2022, Han et al., 2023, Ding et al., 2023a; Casella et al., 2022)
+
+• Difﬁculty tracking delegation relationships creates transparency challenges (Schmid and Shestakov, 2024)
+• Balancing transparency with privacy in delegation records remains unresolved (Tamai and Kasahara, 2024)
+Limited Participation
+
+• Voter apathy and inadequate incentives hamper smaller stakeholders’ engagement, skewing outcomes and reducing effectiveness
+(Kitzler et al., 2023; Sharma et al., 2024; Lu et al., 2024; Gersbach et al., 2021; Fritsch et al., 2024; Han et al., 2023)
+
+• Small stakeholders risk disenfranchisement due to voting-power skew (Schmid and Shestakov, 2024)
+• Delegates may fail to represent constituents’ interests (Ding et al., 2023a)
+Lack of Accountability
+
+• Weak safeguards allow delegates to prioritize personal agendas, raising collusion risks (Gersbach et al., 2021)
+• Limited accountability mechanisms reduce voter inﬂuence, and ensuring anti-collusion measures in complex DAOs remains difﬁcult
+(Özdemir Sönmez et al., 2024; Tamai and Kasahara, 2024; Monteiro et al., 2024)
+
+Implementation Complexity
+
+• Ensuring delegates are informed is challenging, risking governance quality (Sharma et al., 2024; Gilson and Bouraga, 2024; Casella et al.,
+2022)
+
+• Reliance on trusted off-chain platforms, high costs, and scalability issues hamper adoption (Kurniawan et al., 2022; Tamai and Kasahara,
+2024; Monteiro et al., 2024)
+
+TABLE 5 Best practices for delegated voting in DAOs.
+
+Category
+
+Speciﬁcations
+
+Transparency
+
+• Transparent delegation networks and systems to track delegate actions, fostering community trust and accountability (Sharma et al., 2024;
+Lu et al., 2024, Gersbach et al., 2021)
+
+• Clarity in voting power metrics, contributor roles, and delegate decisions to strengthen trust (Kitzler et al., 2023; Fritsch et al., 2024, Ding
+et al., 2023a)
+Accountability
+
+• Accountability measures (e.g., reputation-based systems) to deter misbehavior (Gersbach et al., 2021; Han et al., 2023)
+• Public disclosure of voting strategies or records to enhance delegate accountability (Tamai and Kasahara, 2024; Casella et al., 2022)
+
+Limiting Centralization
+
+• Limits on delegate power to avoid undue concentration and maintain clarity in delegation chains (Tamai and Kasahara, 2024; Fritsch
+et al., 2024; Han et al., 2023; Casella et al., 2022)
+
+• Reputation-based delegation to reduce power centralization (Kitzler et al., 2023)
+Education
+
+• Stakeholder communication to ensure clarity around delegation processes (Gilson and Bouraga, 2024; Han et al., 2023)
+• Voter education to reduce uninformed decisions and improve engagement (Kurniawan et al., 2022; Monteiro et al., 2024)
+
+Implementation
+
+• Robust mechanisms combining token-weighted and reputation-based approaches to balance inﬂuence and deter collusion (Tamai and
+Kasahara, 2024, Ding et al., 2023a)
+
+• Off-chain voting combined with on-chain ﬁnalization and automation to ensure consistency, cost-efﬁciency, and trust (Kurniawan et al.,
+2022; Lu et al., 2024; Monteiro et al., 2024)
+Adaptability
+
+• Scalable delegation mechanisms for a DAO’s size and complexity (Sharma et al., 2024)
+• Dynamic re-delegation to address changing voter preferences (Casella et al., 2022)
+
+ﬂexibility to adapt to changing governance contexts, helping DAOs
+remain responsive and scalable (Sharma et al., 2024; Casella et al.,
+2022). Table 5 provides a detailed summary of these best practices,
+aligning
+each
+recommendation
+with
+studies
+that
+explicitly support it.
+
+(Kitzler et al., 2023). Another critical factor is education that
+encompasses stakeholder communication and clear instructional
+resources. Several authors have pointed out that uninformed
+delegation can undermine both fairness and efﬁciency,
+emphasizing that stronger voter awareness is key to mitigating
+blind or apathetic delegation (Kurniawan et al., 2022, Gilson and
+Bouraga, 2024; Monteiro et al., 2024; Han et al., 2023). Using dual
+systems that combine token weighting with reputation checks is
+frequently recommended, thus distributing inﬂuence beyond token
+balances (Tamai and Kasahara, 2024, Ding et al., 2023a). This is
+often paired with off-chain voting solutions for cost savings,
+supplemented by on-chain ﬁnalization and automated processes
+to maintain trust and consistency (Kurniawan et al., 2022; Lu et al.,
+2024; Monteiro et al., 2024). Dynamic re-delegation grants voters
+
+Frontiers in Blockchain
+
+5 Discussion
+The complexities of DV in DAOs extend beyond theoretical
+frameworks to the practical challenges that shape governance
+outcomes. While delegation mechanisms are implemented to
+enhance efﬁciency and inclusivity, their impact depends on the
+intricate balance between decentralization, transparency, and
+
+08
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+could introduce strategic loopholes. The potential for large token
+holders to distribute their holdings across multiple wallets effectively
+circumventing the quadratic cost function raises concerns about the
+system’s resistance to manipulation (Austgen et al., 2023).
+Additionally, the cognitive and technical overheads associated
+with quadratic voting may alienate less engaged participants,
+making governance participation disproportionately accessible to
+those with the knowledge and resources to navigate these
+complexities (Kim, 2024; Han et al., 2024). Reputation-based
+governance, often cited as an alternative to purely tokenweighted systems, faces the issue of deﬁnitional ambiguity. What
+constitutes a “reputable” contributor? Who determines which
+reputational metrics are valid? (Ding et al., 2023b)? The risk of
+reputation gaming, where inﬂuential actors accumulate social capital
+without necessarily acting in the best interest of the DAO,
+complicates its viability as a reliable governance mechanism
+(Appel and Grennan, 2024). Moreover, reputation systems may
+inadvertently concentrate governance inﬂuence on highly visible
+individuals or symbolic leaders, regardless of formal voting weight.
+The prominence of ﬁgures such as Vitalik Buterin within the
+Ethereum ecosystem illustrates how reputational capital can
+informally centralize agenda-setting power in decentralized
+systems. While innovative, these mechanisms highlight the
+inherent trade-offs in designing governance systems that are both
+equitable and efﬁcient.
+Reducing delegate dominance is often framed as an essential
+step toward democratic governance, the role of centralization in
+DAOs is more nuanced than commonly acknowledged. Large
+stakeholders, especially those with substantial ﬁnancial interests,
+may play a stabilizing role by ensuring continuity, preventing
+governance stagnation, and safeguarding against voter apathy
+(Kitzler et al., 2023; Fritsch et al., 2024; Gilson and Bouraga,
+2024; Schmid and Shestakov, 2024; Ding et al., 2023a; Casella
+et al., 2022). This perspective aligns with research on governance
+dynamics in decentralized ecosystems, where strategic centralization
+in the early stages can facilitate decision-making agility and longterm sustainability (Ding et al., 2023b). In practice, governance
+bottlenecks such as low voter turnout, indecisive voting patterns,
+and an inability to reach quorum can render DAOs ineffective,
+making some degree of governance concentration an operational
+necessity rather than a ﬂaw (Lloyd et al., 2024; Falk et al., 2024).
+However, over-reliance on a small group of decision-makers, even if
+initially beneﬁcial, can create governance hierarchies that are
+difﬁcult to dismantle later, raising concerns about long-term
+resilience and adaptability (Rikken et al., 2019). The challenge is
+not merely decentralizing for its own sake but determining when
+and how centralization may serve a constructive role without
+undermining
+participatory
+governance
+principles.
+The
+relationship between governance structures and power
+consolidation is further complicated by the evolving nature of
+delegations. While delegation is intended to distribute governance
+responsibility, empirical evidence suggests that it often leads to
+governance clustering, in which a small number of delegates
+accumulate a disproportionate share of voting power (Schmid
+and Shestakov, 2024; Han et al., 2023, Ding et al., 2023b). This
+raises the question of whether delegation, rather than dispersing
+inﬂuence, reshapes centralization in an opaquer manner. The
+emergence of “delegate cartels” and informal voting blocs further
+
+functional governance structures. The following discussion explores
+these dimensions, questioning whether the existing models achieve
+their intended goals or merely introduce new risks and inefﬁciencies.
+
+5.1 Impact on governance
+Transparency in delegation processes is widely regarded as a
+fundamental pillar of accountable governance in DAOs. The ability
+to track delegation records, maintain auditable voting logs, and
+ensure publicly accessible governance documentation is critical to
+fostering trust and preventing governance manipulation (Lu et al.,
+2024; Fritsch et al., 2024; Monteiro et al., 2024; Han et al., 2023).
+However, the assumption that transparency alone guarantees
+equitable governance deserves further scrutiny. While valuable,
+transparency
+mechanisms
+can
+inadvertently
+introduce
+centralization risks if they require an entity, such as a core DAO
+team or an external governance facilitator, to oversee and maintain
+records (Lloyd et al., 2024). This creates a paradox in which
+transparency efforts aimed at decentralization may reinforce
+dependence on centralized infrastructure (Axelsen et al., 2023).
+Furthermore, the sheer volume of governance data, when not
+properly structured, may overwhelm participants rather than
+empower them, leading to de facto reliance on governance
+analysts or power users, who can process and interpret this
+information effectively (Fan et al., 2024). The challenge, then, is
+not only ensuring transparency but also designing it in a way that
+remains accessible and actionable for all participants, rather than
+reinforcing elite governance structures.
+In traditional corporate governance, DV is commonly
+implemented through proxy voting, typically accompanied by
+formal proxy statements. These statements detail voting
+procedures, outline proposals, and disclose potential conﬂicts of
+interest, thereby serving as transparency-enhancing instruments
+(Green-Armytage, 2014; Agrawal, 2012). Despite criticisms of
+opacity, vote dilution, and coordination problems in public
+institutions, the structured nature of corporate proxy voting
+offers a reference point for decentralized governance systems
+(Panisi et al., 2019). In particular, the introduction of proxy
+statements such as DAO-native artifacts could provide a
+mechanism to standardize disclosures on delegate motivations,
+voting history, ﬁnancial incentives, and afﬁliations. This approach
+mirrors blockchain proposals to improve shareholder democracy by
+enabling real-time identiﬁcation of beneﬁcial shareholders and
+immutable records of voting actions (Panisi et al., 2019). Such
+transparency may strengthen procedural legitimacy and
+counterbalance some risks associated with delegation, such as
+vote hijacking or unaccountable proxy behavior. However, the
+challenge lies in reconciling the formalization of these
+mechanisms with the ethos of openness, anonymity, and
+permissionless participation that characterize many DAOs.
+Efforts to counterbalance governance centralization, particularly
+through quadratic voting, weighted delegation constraints, and
+reputation-based governance, offer promising, but imperfect
+solutions (Tamai and Kasahara, 2024; Ding et al., 2023a; Van
+Vulpen et al., 2024). For instance, quadratic voting has been
+praised for mitigating the inﬂuence of dominant stakeholders by
+increasing the cost of additional votes. However, its implementation
+
+Frontiers in Blockchain
+
+09
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+results were not enforced, calling into question the autonomy of the
+organization. This raises concerns about whether such systems can
+still be classiﬁed as DAOs and may warrant reclassiﬁcation as
+Decentralized Organizations (DOs) or Decentralized Partially
+Autonomous Organizations (DPAOs) (Rikken et al., 2023).
+Capping or restricting delegate voting power through mechanisms
+such as formal limits or gradual weighting adjustments is often
+proposed as a solution to mitigate governance monopolization and
+encourage broader representation (Tamai and Kasahara, 2024; Fritsch
+et al., 2024; Han et al., 2023; Casella et al., 2022). However, this approach
+raises questions regarding the fairness of such restrictions. In particular,
+if governance power is deliberately capped, it could deter signiﬁcant
+token investments from those most ﬁnancially committed to the DAO’s
+success (Austgen et al., 2023). Unlike traditional ﬁnancial systems,
+where larger investors are given greater voting inﬂuence due to their
+ﬁnancial stakes, DAO governance models that limit large token holders
+may inadvertently discourage strategic investments and long-term
+commitments (Appel and Grennan, 2024). This creates a
+fundamental dilemma: should governance power be proportional to
+ﬁnancial risk and investment, or should it be redistributed to ensure a
+more democratic voting process, even if it comes at the expense of
+efﬁciency and capital incentives? Additionally, while capping
+mechanisms may prevent governance centralization, they also risk
+favoring less engaged participants who do not have the same level
+of exposure or vested interest in the DAO’s long-term outcomes,
+potentially leading to uninformed decision-making or lower-quality
+governance resolutions (Rikken et al., 2019). The introduction of
+dynamic delegation models, such as real-time vote reassignments
+and trust-based delegation systems, offers a more ﬂexible governance
+structure by allowing participants to delegate votes based on their
+expertise or alignment of interests (Gersbach et al., 2021; Schmid and
+Shestakov, 2024; Casella et al., 2022). However, such systems inherently
+create trust dependencies, shifting the governance structure from a
+purely stake-based model to one that relies on subjective assessments of
+credibility and expertise. This raises the question of how trust is deﬁned
+in this context: who determines which delegates are trustworthy and by
+what metrics (Kim, 2024)? Reputation-based systems, often proposed as
+a means of counterbalancing wealth-driven governance concentrations,
+face implementation challenges. Reputation metrics must be carefully
+designed to avoid becoming an additional attack vector, particularly if
+social engagement indicators, such as Discord activity, forum presence,
+or proposal participation, are used to determine governance inﬂuence
+(Han et al., 2024). The potential for gaming reputation scores through
+multi-accounting, coordinated upvoting, or delegate collusion presents
+a signiﬁcant risk, as socially connected individuals or organized
+syndicates could manipulate governance power without necessarily
+acting in the best interests of the broader DAO community
+(Austgen et al., 2023). This highlights a fundamental concern in
+reputation-based delegation: while it can help diversify governance
+beyond wealth-based power structures, it introduces new vulnerabilities
+tied to social engineering and network effects, rather than purely
+ﬁnancial or technical expertise (Ding et al., 2023b).
+
+underscores how delegation can reinforce governance
+monopolization rather than mitigate it (Austgen et al., 2023;
+Lloyd et al., 2024). Additionally, the strategic abstention of
+inﬂuential delegates, where key ﬁgures deliberately refrain from
+voting to avoid public accountability for controversial decisions,
+compounds governance opacity and erodes trust in delegation
+systems (Gersbach et al., 2021). While transparency is widely
+regarded as a prerequisite for governance accountability, its
+effectiveness is contingent on meaningful participation and
+inclusivity (Gilson and Bouraga, 2024). Without broad
+participation in the delegation process and equitable access to
+decision-making tools, transparency risks become a performative
+layer rather than a functional safeguard (Monteiro et al., 2024).
+Fairness, often cited as a standalone governance principle, depends
+on both inclusive participation and transparent procedures (Gilson
+and Bouraga, 2024). Accountability, in turn, emerges not merely
+from auditability, but from a governance environment in which
+participants can actively engage, contest decisions, and observe the
+rationale behind delegate actions (Fukuyama, 2016). This
+interdependence suggests that, rather than treating these concepts
+as discrete criteria, effective governance design should sequence
+them as mutually reinforcing inclusivity and participation enable
+transparency, which makes accountability possible, and together
+they foster perceived and procedural fairness (Fukuyama, 2016).
+
+5.2 Implementation forms
+The integration of off-chain voting mechanisms such as
+Snapshot has been widely adopted in DAOs because of its ability
+to reduce transaction costs and encourage broader participation
+(Kurniawan et al., 2022; Schmid and Shestakov, 2024; Monteiro
+et al., 2024, Ding et al., 2023a). However, reliance on off-chain voting
+has several disadvantages that fundamentally contradict the
+principles of autonomous execution and trustless governance
+(Zhou et al., 2024). Although off-chain platforms mitigate direct
+on-chain transaction fees, they introduce an intermediary layer that
+requires additional veriﬁcation and manual enforcement to integrate
+decisions back into the blockchain (Falk et al., 2024). This
+dependency on centralized or semi-centralized infrastructure
+creates vulnerabilities, as DAOs become reliant on off-chain
+platforms that may not offer the same level of immutability,
+censorship resistance, or transparent auditability as their onchain counterparts (Axelsen et al., 2023). The requirement to
+synchronize off-chain decisions manually with on-chain smart
+contracts increases coordination costs and introduces latency,
+which can be particularly detrimental in governance models
+requiring frequent decision cycles or the rapid execution of timesensitive proposals (Fan et al., 2024; Zhou et al., 2024). Additionally,
+concerns about vote validity and manipulation arise owing to the
+necessity of external veriﬁcation mechanisms to ensure the integrity
+of results before they are recorded on the chain (Falk et al., 2024).
+These challenges the fundamental assumption that DAOs operate as
+self-executing, autonomous entities, making governance execution
+less deterministic and more reliant on external actors who may
+introduce biases or operational inefﬁciencies (Nabben, 2023). This
+issue is not just theoretical but has already materialized in practice,
+most notably in the Tribe/Fei DAO case, where off-chain voting
+
+Frontiers in Blockchain
+
+5.3 Challenges
+Centralization remains one of the most contentious challenges
+in DAO governance, particularly when delegation mechanisms lead
+
+10
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+frequently link voting power to token holdings, intertwining
+governance rights with economic incentives and creating
+susceptibility to vote buying, signaling games, or delegate capture
+(Gersbach et al., 2021; Austgen et al., 2023). The visibility of onchain delegation graphs and vote histories can increase
+transparency, but also introduce new attack surfaces, including
+targeted bribery or collusion among token whales (Kitzler et al.,
+2023; Zhou et al., 2024). These characteristics differentiate DV in
+DAOs from their analogs in corporate or political systems, making it
+a uniquely fertile ground for both innovation and governance risk.
+While delegation is intended to increase participation by
+allowing fewer active members to transfer their governance rights
+to trusted representatives, the effectiveness of this system depends
+on whether delegates genuinely act in the best interests of the
+broader community. A persistent issue is that delegates, once
+empowered, may prioritize personal agendas or act in
+coordination with select groups rather than serving as neutral
+representatives of the community’s interests (Özdemir Sönmez
+et al., 2024, Gersbach et al., 2021, Tamai and Kasahara, 2024;
+Monteiro et al., 2024; Zhou et al., 2024). This raises the question
+of how DAOs can incentivize delegates to align with collective
+governance objectives. Mechanisms such as stake-weighted
+reputation systems, in which delegates accumulate governance
+credibility based on past decision-making performance, can help
+enforce accountability (Ding et al., 2023b). However, such systems
+require careful design to prevent reputation gaming and social
+manipulation, as actors can collude and artiﬁcially inﬂate
+credibility scores (Austgen et al., 2023).
+A lack of accountability among delegates not only leads to
+governance inefﬁciencies, but also enables collusive behavior,
+where powerful actors coordinate to push through self-serving
+proposals with minimal resistance (Özdemir Sönmez et al., 2024;
+Gersbach et al., 2021; Tamai and Kasahara, 2024; Monteiro et al.,
+2024). Addressing this issue requires the introduction of
+cryptoeconomic deterrents, which impose penalties on
+governance misconduct. On-chain penalties, such as slashing
+mechanisms that deduct a portion of a delegate’s stake when
+collusion or malicious voting behavior is detected, present a
+potential solution (Appel and Grennan, 2024). Additionally,
+multi-signature governance models, in which high-stakes
+governance decisions require approval from multiple independent
+parties, could serve as a check against unilateral decision-making
+(Nabben, 2023). However, implementing such deterrents introduces
+additional complexity; new DAOs, in particular, may lack the
+necessary technical infrastructure to effectively enforce
+cryptoeconomic penalties. If the cost of implementing such
+security mechanisms outweighs its beneﬁts, they may serve as a
+barrier to governance participation, deterring contributors who fear
+unintended penalties for governance missteps. Moreover, while
+slashing mechanisms provide strong disincentives for malicious
+behavior, they also raise concerns about the due process: How
+are governance violations adjudicated, and who decides when
+penalties are justiﬁed?
+The broader challenge faced by DAOs is that every safeguard
+introduced to prevent governance abuse adds another layer of
+complexity to governance participation. While highly sophisticated
+cryptoeconomic models may offer effective deterrence against
+collusion and delegate misconduct, they could also make DAO
+
+to power concentration among a small subset of inﬂuential
+stakeholders (Kitzler et al., 2023; Sharma et al., 2024; Gilson and
+Bouraga 2024; Schmid and Shestakov 2024, Ding et al., 2023a;
+Casella et al., 2022). However, the fundamental question remains:
+What level of centralization is acceptable within a DAO? While
+excessive governance concentration contradicts the principles of
+decentralization, some degree of centralization may be necessary to
+facilitate efﬁciency and strategic decision-making, particularly in
+early stage DAOs, where governance structures are still developing
+(Axelsen et al., 2023). A completely decentralized system, where
+every token holder has an equal say regardless of expertise or stake,
+may result in a decision-making gridlock, whereas limited
+centralization in the hands of engaged, knowledgeable
+participants could enhance governance responsiveness. However,
+there is an inherent trade-off between efﬁciency and inclusivity, and
+concentrated governance power risks to reduce the diversity of
+thought, potentially weakening the adaptability and resilience of
+DAOs over time (Falk et al., 2024). Ensuring that DAOs ﬁnd an
+optimal balance between decentralization and structured
+governance remains an open challenge that requires
+continuous iteration.
+The tension between oversight and privacy further complicates
+governance design, as DAOs must decide how much visibility to
+grant to voting records and delegate behavior (Tamai and Kasahara,
+2024; Schmid and Shestakov, 2024). Publicly accessible voting
+records and delegation pathways enhance accountability but also
+create vulnerabilities. High transparency may expose governance
+participants to targeted attacks, including sophisticated phishing
+campaigns aimed at compromising key delegates and acquiring
+governance controls (Austgen et al., 2023; Tan et al., 2023). This
+raises the need for technical solutions that can verify governance
+actions, while preserving individual privacy. Zero-knowledge proofs
+(ZKPs) offer a promising approach for enabling veriﬁable yet
+anonymous participation in DAO governance, allowing
+participants to prove that they have voted or delegated without
+revealing speciﬁc details (Fan et al., 2024; Zariﬁs and Fu, 2024).
+However, integrating ZKP-based systems introduces additional
+complexity, requiring technical expertise, which many DAOs,
+particularly newer ones, may lack. Furthermore, although ZKPs
+may mitigate the risks of targeted attacks, they do not fully address
+the broader challenge of balancing transparency and governance
+legitimacy. A DAO that hides too much risks undermining trust,
+while excessive exposure may deter participation because of
+privacy concerns.
+Delegation mechanisms often exacerbate disenfranchisement
+because those without substantial token holdings may feel
+excluded from meaningful governance participation (Schmid and
+Shestakov 2024, Ding et al., 2023a). Although many challenges
+associated with DV, such as delegate apathy, misalignment of
+interests, and centralization, are well documented in traditional
+voting contexts, the DAO environment introduces distinct
+affordances and constraints. DV in DAOs is typically
+implemented via smart contracts, allowing delegation to be
+programmable, conditional, and publicly auditable (Özdemir
+Sönmez et al., 2024; Tamai and Kasahara, 2024). This enables
+features such as real-time revocability, delegation caps, or
+slashing mechanisms to respond to delegate misbehavior (Tamai
+and Kasahara, 2024; Zhou et al., 2024). Additionally, DAOs
+
+Frontiers in Blockchain
+
+11
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+5.4 Best practices
+
+governance prohibitively difﬁcult for new participants to
+navigate (Rikken et al., 2019). The trade-off between security,
+efﬁciency, and accessibility must be carefully managed,
+particularly as DAOs evolve and scale. While inclusiveness
+and transparency remain foundational governance goals,
+DAOs introduce distinct tensions around decentralization and
+efﬁciency, concepts often underemphasized or treated only
+implicitly in classical governance frameworks (Rhodes, 2007;
+Fukuyama, 2016). Efﬁciency, in particular, has historically
+been a concern of administrative science and public management
+(e.g., New Public Management) but is rarely framed as a core
+governance value in political science (Fukuyama, 2016). In
+contrast, DAOs operationalize efﬁciency through protocol-level
+automation and smart contract execution, enabling governance
+processes to scale without relying on hierarchical oversight (Lu
+et al., 2024). Similarly, while decentralization in conventional
+governance is typically institutionalized as a constitutional or
+administrative feature, in DAOs, it emerges dynamically through
+token distribution, delegation patterns, and ﬂuctuating voting
+participation (Fritsch et al., 2024). Distinguishing these newer
+concerns from classical values adds conceptual clarity and
+highlights the governance innovations introduced by the DAOs.
+It is worth noting that this review focuses on token-based DV,
+and that not all DAOs rely on ﬁnancial equity or token ownership to
+structure governance. Some DAOs experiment with alternative
+models, such as one-person-one-vote schemes, contributionbased voting, or reputation-weighted systems that attempt to
+decouple the inﬂuence from ﬁnancial wealth (Fan et al., 2024;
+Monteiro et al., 2024). These models are still emerging, but they
+hold promise for reducing governance imbalances exacerbated by
+token concentration, a challenge not unique to DAOs, but
+particularly acute in blockchain-native contexts (Austgen et al.,
+2023; Zhou et al., 2024). Moreover, DAOs provide programmable
+infrastructure that is uniquely suited to implement DV. Delegation
+can be time-limited, revocable, and conditional, allowing voters to
+dynamically transfer and reclaim inﬂuence in ways unavailable in
+most traditional systems (Gersbach et al., 2021, Tamai and
+Kasahara, 2024; Casella et al., 2022; Green-Armytage, 2014).
+These affordances offer a testbed for rethinking democratic
+representation by combining the responsiveness of direct voting
+with the scalability of delegation. In many cases, the simplest
+solutions, such as increasing community engagement,
+encouraging active participation, and reinforcing social norms
+around ethical governance, may prove to be just as effective, if
+not more so, than complex on-chain enforcement mechanisms. It is
+worth noting again the recency of the publications cited in this
+review. The topic of effective governance within DAOs is barely a
+few years old and, while it is useful to speculate on the most effective
+way to do this, the only way to make a true evaluation is for DAOs to
+experiment with the different tools at their disposal. Future
+governance models may beneﬁt from hybrid approaches that
+combine technical deterrents with social incentives to ensure that
+DAOs remain resilient and accessible to a broad range of
+participants (Davidson, 2024). While a perfect solution may not
+yet exist, one that upholds DAO integrity while enabling effective
+governance for a broad community remains an achievable goal
+worth pursuing through continuous reﬁnement and
+experimentation.
+
+Frontiers in Blockchain
+
+Encouraging thoughtful engagement among token holders is
+crucial for ensuring that delegation mechanisms function as
+intended. While DAOs often seek to improve governance
+efﬁciency through delegation, a key challenge lies in educating
+participants on the nuances of delegation. Some of the included
+publications advocate for dual systems that combine token
+weighting with reputation checks to distribute inﬂuence beyond
+simple token balances (Gersbach et al., 2021; Tamai and Kasahara,
+2024, Ding et al., 2023a). However, the integration of reputationbased checks in Web3 environments raises concerns because such
+systems often conﬂict with the ethos of anonymity and
+permissionless participation that underpin many decentralized
+networks (Nabben, 2023; Kaal, 2021). The fundamental question
+is whether requiring reputation assessments inadvertently
+introduces barriers that contradict the open-access principles of
+DAOs. While credentials and identity veriﬁcation mechanisms
+might improve governance integrity, they also risk excluding
+pseudonymous or privacy-focused participants, shifting DAO
+governance toward a model that resembles traditional
+institutions, rather than preserving its decentralized roots (Appel
+and Grennan, 2024). Moreover, the trade-off between oversight and
+privacy remains contentious. Greater accountability, particularly in
+mitigating collusion or governance abuse, often demands more
+transparent governance records. However, excessive transparency
+can deter participation by making delegates vulnerable to external
+pressures or reputational risks (Tamai and Kasahara, 2024; Schmid
+and Shestakov, 2024). For example, if every voting decision is
+permanently recorded and publicly attributed, delegates may
+choose to strategically abstain from controversial decisions rather
+than risk backlash, thus undermining governance responsiveness
+(Austgen et al., 2023). This dilemma highlights the need for nuanced
+transparency mechanisms that ensure accountability, without
+exposing participants to undue scrutiny or potential retaliation.
+Although transparency and recordability are often cited as trustenhancing features in blockchain-based governance, it is important
+to recognize that trust is not automatically guaranteed by
+technological means. Rather than eliminating the need for trust,
+blockchain systems often redistribute trust from interpersonal
+relationships to protocols, platforms, and governance structures
+(De Filippi et al., 2020). Research in this area has highlighted
+that so-called “trustless” technologies actually rely on layered
+forms of institutional, infrastructural, and social trust (De Filippi
+et al., 2020). Empirical ﬁndings conﬁrm that perceived trust in
+decentralized systems depends not only on technical assurances but
+also on institutional and social factors, such as regulatory clarity,
+user familiarity, and the perceived credibility of platforms (Zariﬁs
+and Fu, 2024; Smits and Hulstijn, 2020). Conﬁdence in the
+correctness of code and game-theoretic incentives may substitute
+for direct human trust, but trust in surrounding systems, such as
+developers, governance facilitators, or community norms, remains
+central. User studies further demonstrate that, even in
+technologically secure environments, trust is shaped by broader
+sociotechnical dynamics, including usability, design interaction, and
+expectations of institutional oversight (Zariﬁs and Fu, 2024; Smits
+and Hulstijn, 2020). Enforcing transparency requires a structured
+mechanism for data storage, veriﬁcation, and presentation, raising
+
+12
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+fairness and efﬁciency (Kurniawan et al., 2022, Gilson and Bouraga,
+2024; Monteiro et al., 2024; Han et al., 2023). However, mitigating
+uninformed delegation requires more than just educational
+resources; it requires structural incentives that encourage active
+participation. Potential solutions include implementing
+mechanisms that reward informed delegation through
+performance-based incentives, delegate ranking systems based on
+veriﬁable contributions, or mandatory periodic reevaluation of
+delegation choices. However, the effectiveness of these
+approaches depends on whether DAOs can cultivate a
+governance culture that prioritizes engagement without
+introducing undue burdens to participants (Appel and Grennan,
+2024). In the absence of meaningful incentives, uninformed
+delegation may persist, reinforcing passive governance structures
+in which a small subset of delegates continues to wield a
+disproportionate inﬂuence over decision-making. Recent research
+shows that incentive structures do not universally strengthen DAO
+governance. In some cases, particularly in DAOs with nonﬁnancial
+or mission-driven objectives, the absence of direct incentives may
+support greater sustainability (Rikken, 2024). The interaction
+between incentive mechanisms and a DAO’s underlying purpose
+plays a critical role in determining governance outcomes, suggesting
+that mechanisms designed for ﬁnance oriented DAOs may not
+translate effectively into other domains (Rikken, 2024). Therefore,
+misalignment between governance structures and organizational
+objectives can undermine long-term viability (Rikken, 2024).
+Large-scale empirical research conﬁrms that DAO size, design,
+and participation incentives often correlate with increasing power
+concentration, highlighting the need to tailor governance structures
+not only to a DAO’s goals but also to its anticipated scale and
+community dynamics (Peña-Calvin et al., 2024).
+
+the question of who maintains these records and how they ensure
+integrity without introducing centralization risks. The balance
+between transparency and functional governance remains a
+delicate issue, particularly for DAOs that rely on off-chain
+discussions and informal governance structures where enforcing
+transparency may not be straightforward (Fan et al., 2024).
+Additionally, while reputation-based systems can penalize
+misconduct (Gersbach et al., 2021; Han et al., 2023), the absence
+of a universally agreed upon deﬁnition of misconduct complicates
+enforcement. Without a standardized framework, each DAO must
+independently establish its criteria for responsible governance,
+leaving gaps in the identiﬁcation and penalization of misbehavior
+(Falk et al., 2024). Future research could explore the feasibility of
+DAO-wide consensus mechanisms or tooling that provide
+standardized misconduct deﬁnitions while preserving ﬂexibility
+for individual governance structures. Furthermore, although dual
+systems that combine token weighting with reputation checks are
+recommended (Gersbach et al., 2021; Tamai and Kasahara, 2024,
+Ding et al., 2023a), their implementation introduces additional
+complexity, necessitating extensive voter education. However, the
+question remains: Who is responsible for educating the participants?
+Given that DAO governance structures may lack centralized
+leadership, the burden of governance literacy often falls on
+engaged community members, which may create disparities in
+information access and reinforce power asymmetries (Ding et al.,
+2023b, Berthelsen and Bjellerås 2023). Education is not only about
+explaining governance rules; it must also include guidance on
+evaluating delegates, understanding governance risks, and making
+informed decisions in a rapidly evolving landscape. Without
+structured educational initiatives, governance complexity may
+serve as a barrier to participation, limiting engagement to those
+already well versed in the system while discouraging newcomers
+from meaningful involvement (Rikken et al., 2019).
+The introduction of real-time or dynamic re-delegation
+mechanisms provides greater ﬂexibility for participants to adjust
+their governance strategies in response to changing contexts
+(Sharma et al., 2024; Casella et al., 2022). However, such
+mechanisms place additional strain on governance planning,
+raising concerns regarding whether they are more viable in
+smaller DAOs than in large complex governance structures. In
+smaller DAOs, frequent delegation adjustments may be feasible,
+allowing iterative governance reﬁnements. In contrast, larger DAOs
+may struggle with coordination challenges, as frequent re-delegation
+could lead to governance instability, complicating proposal
+execution and long-term decision-making (Austgen et al., 2023).
+Although well-deﬁned voting power metrics and explicit
+information on contributor roles can enhance informed decisionmaking and boost trust (Kitzler et al., 2023; Fritsch et al., 2024, Ding
+et al., 2023), information overload remains a signiﬁcant risk.
+Providing too much granular detail on governance metrics may
+make it difﬁcult for new participants to engage effectively, as the
+learning curve for understanding DAO structures can be
+overwhelming (Falk et al., 2024). Ensuring clarity without
+overwhelming users requires a careful balance between detail and
+accessibility, potentially through modular educational content or
+tiered governance frameworks.
+The challenge of uninformed delegation remains a pressing issue
+because blind or apathetic delegation can undermine governance
+
+Frontiers in Blockchain
+
+5.5 Limitations
+This study has several limitations that warrant acknowledgment.
+The reliance on a systematic literature review introduces an inherent
+scope and selection constraints. Although substantial efforts were
+made to capture key literature, the selection remained constrained
+by full-text access and English-only studies. Additionally, the study
+included preprint repositories such as arXiv and SSRN to account
+for emerging research. However, preprints lack formal peer review,
+which can introduce biases in the methodological rigor and ﬁndings.
+Even with screening for academic quality, the lack of peer review
+from some sources remains a limitation. Moreover, publication
+biases may skew results if studies highlighting governance
+inefﬁciencies or challenges gain disproportionate attention
+compared with those presenting neutral or positive ﬁndings.
+DAOs also evolve rapidly; therefore, the state of governance
+mechanisms at the time of publication may not fully reﬂect
+ongoing innovation. The majority of included studies focused on
+ﬁnancial and technological DAOs, potentially limiting
+transferability to other domains, such as social or art-related
+(e.g., NFTs). Furthermore, signiﬁcant variations in governance
+structures, delegation models, and tokenomics complicate broad
+generalizations across all DAOs. Additionally, while this review
+synthesizes DV mechanisms, it excludes primary stakeholder
+perspectives, such as DAO contributors, token holders, or
+
+13
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+collusion. Instead, adaptive and context-speciﬁc models are
+needed that actively incorporate user education, advanced
+cryptoeconomic security, and ﬂexible oversight structures.
+Building on the ﬁndings of this review, future research should
+focus on encouraging DV in more transparent, equitable, and
+iterative ways to preserve genuinely decentralized ethics while
+sustaining functional governance.
+
+governance participants. Future work should complement these
+ﬁndings with qualitative interviews or survey-based assessments
+of real-world user experiences. Given the dynamic nature of
+blockchain governance, these results may not capture the latest
+iterations or adaptations; as DAOs continue to reﬁne delegation,
+real-world practices may outpace academic research. The relatively
+small number of included publications (13) warrants critical
+reﬂection. While this may partially stem from the narrow scope
+of this review, which focuses speciﬁcally on DV mechanisms within
+DAOs, it also reveals a notable gap in academic literature. During
+the selection process, it became apparent that many studies
+mentioned DV only peripherally, often without theoretical or
+empirical analysis. This lack of sustained engagement suggests
+that despite its practical relevance, DV has yet to receive
+proportionate scholarly attention within the broader discourse on
+DAO governance. Moreover, although secondary literature of nonpeer-reviewed sources, such as governance forums, technical blogs,
+and DAO documentation, the exclusion of these sources for
+methodological reasons further underscores the disconnection
+between practice and academic research. The limited academic
+focus of DV may also reﬂect a broader trend within DAO
+scholarship to prioritize structural and ﬁnancial concerns (e.g.,
+tokenomics, coordination, scalability) over political and
+procedural dimensions. This may highlight the need for a more
+deliberate research agenda that focuses on the mechanisms,
+consequences, and normative implications of delegation in
+decentralized systems. Despite these limitations, this study
+provides a structured synthesis of current research on DV in
+DAOs, offering insights into governance outcomes, best practices,
+and challenges ahead. Future research could address these gaps by
+integrating empirical assessments, stakeholder perspectives, and
+real-time governance data from active DAOs.
+
+7 Outlook
+The following Outlook section outlines possible future
+directions for research and design in DV systems for DAOs. It is
+important to note that these considerations are not solely grounded
+in the 13 included studies but are informed by broader learnings
+from the review process and the authors’ practical involvement in
+DAO governance.
+Multiple studies have suggested that uniform governance
+structures may either impede expert-driven reﬁnements or
+exclude broad token-holder participation (Gilson and Bouraga,
+2024; Casella et al., 2022; Ding et al., 2023a). One promising
+direction is a tiered governance model that segments proposals
+by complexity: technical upgrades could be reviewed by domain
+experts, whereas treasury allocations and high-level policy decisions
+remain open to all token holders. Periodic reviews (e.g., biannual)
+could recalibrate delegation settings based on evolving expertise and
+stakeholder feedback. Such an approach may be especially beneﬁcial
+in hybrid DAOs such as BioDAOs, which combine domain-speciﬁc
+knowledge with broad member involvement, meriting future
+empirical evaluations.
+The success of DV also depends on voters’ abilities to
+understand complex proposals. Several studies have highlighted
+how information overload and lack of clarity contribute to blind
+delegation and apathy (Sharma et al., 2024; Gersbach et al., 2021;
+Casella et al., 2022). To mitigate this, future research could explore
+the role of artiﬁcial intelligence (AI) in DAO governance. AI, which
+is a computational system capable of tasks such as learning,
+reasoning, and natural language processing (Russell and Norvig,
+2021), can be leveraged to summarize proposals, ﬂag key
+divergences, and match voter preferences with delegate histories.
+Cryptographic proofs could preserve data integrity, whereas
+transparency disclosures would ensure that users understand that
+these are advisory tools. Such systems may help lower cognitive
+barriers and promote informed and inclusive participation.
+In addition to AI, user interface design is an important frontier.
+Complex governance platforms discourage engagement (Kurniawan
+et al., 2022; Fritsch et al., 2024; Monteiro et al., 2024). A uniﬁed
+dashboard could integrate on- and off-chain data, visualize
+delegation networks, and display proposal summaries, historical
+voting patterns, and personalized governance panels. Interactive
+onboarding tools, including guided tutorials, concept quizzes (e.g.,
+on quorum or abstention), and tiered modes for novice versus
+advanced users, could support both new and experienced
+participants. Real-time governance activities or integration with
+communication platforms could reduce friction and increase
+engagement.
+Another underexplored design space concerns mechanisms for
+reducing the dominance of large stakeholders. Unconditional token-
+
+6 Conclusion
+DV in DAOs presents a fundamental trade-off between
+efﬁciency and decentralization. While designed to relieve voter
+fatigue and reward informed decision making, it can
+inadvertently centralize power if transparency and accountability
+measures are inadequate. The literature reviewed in this study
+underscores ﬁve interconnected challenges that collectively
+determine DV effectiveness in practice: power centralization,
+insufﬁcient transparency, low participation rates, weak
+accountability mechanisms, and implementation complexity.
+Notably, token-weighted systems remain the dominant approach
+to governance, although attempts to moderate concentration
+through mechanisms such as capping, progressive weighting, and
+reputation-based checks have yielded mixed outcomes. Emerging
+innovations such as multilayer or tiered governance pathways that
+segment decisions by complexity show potential in reconciling
+domain expertise with broad-based membership control.
+However, these solutions introduce new layers of complexity,
+which can hamper usability and deter new participants.
+Designing a balance between efﬁciency and inclusivity remains
+an open research topic. The resulting tension suggests that
+neither delegation nor direct token voting in isolation can fully
+address governance pitfalls such as misaligned incentives or
+
+Frontiers in Blockchain
+
+14
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+Conceptualization, Writing – review and editing, Investigation,
+Writing – original draft.
+
+weighted delegation enables whales to shape outcomes
+disproportionately. A progressive capping system, where the
+marginal weight of delegated tokens decreases past predeﬁned
+thresholds, could redistribute inﬂuence more equitably (Tamai
+and Kasahara, 2024; Casella et al., 2022). Additional design
+layers, such as cooling periods or vesting schedules for newly
+delegated tokens, could further deter strategic manipulation.
+Combining capital- and reputation-based mechanisms may be
+necessary to mitigate collusion and ensure delegation accountability.
+For example, a nomination committee (NomCom) certiﬁes delegate
+eligibility based on past contributions, while holding no direct voting
+power. Non-transferable “credit tokens” issued for meaningful
+participation would need to be actively allocated or expired,
+reducing passive inﬂuence. Delegates with broad endorsements
+gain legitimacy, while misconduct could penalize not only the
+delegate but also endorsers through token slashing. This layered
+approach blends social trust and economic commitment to limit
+governance distortions (Cardaso, 2022; Gilson and Bouraga, 2024;
+Casella et al., 2022). Finally, it is important to acknowledge that the
+design concepts discussed here remain underexplored in scientiﬁc
+literature. Their feasibility, risks, and effects require further
+systematic study before conclusions can be drawn.
+
+Funding
+The author(s) declare that no ﬁnancial support was received for
+the research and/or publication of this article.
+
+Conﬂict of interest
+The authors are afﬁliated with Molecule (molecule.xyz; FL, KK,
+KC) and BIO (bio.xyz; LW), organizations dedicated to advancing
+DAOs in the scientiﬁc ﬁeld. These afﬁliations did not inﬂuence the
+content or conclusions of this study.
+
+Generative AI statement
+The author(s) declare that no Generative AI was used in the
+creation of this manuscript.
+
+Author contributions
+
+Publisher’s note
+
+LW: Writing – review and editing, Methodology,
+Writing – original draft, Investigation, Formal Analysis,
+Conceptualization.
+FL:
+Conceptualization,
+Investigation,
+Writing – original draft, Writing – review and editing. KK:
+Formal Analysis, Writing – original draft, Conceptualization,
+Writing
+–
+review
+and
+editing,
+Investigation.
+KC:
+
+All claims expressed in this article are solely those of the authors
+and do not necessarily represent those of their afﬁliated
+organizations, or those of the publisher, the editors and the
+reviewers. Any product that may be evaluated in this article, or
+claim that may be made by its manufacturer, is not guaranteed or
+endorsed by the publisher.
+
+References
+Agrawal, A. K. (2012). Corporate governance objectives of labor union shareholders:
+evidence from proxy voting. Rev. Financial Stud. 25 (1), 187–226. doi:10.1093/rfs/hhr081
+
+Ding, Q., Xu, W., Wang, Z., and Lee, D. K. C. (2023a). Voting schemes in DAO
+governance. World Sci. Annu. Rev. Fintech 1, 2350004. doi:10.1142/S2811004823500045
+
+Appel, I., and Grennan, J. (2024). Decentralized governance and digital asset prices.
+Darden Business School Working Paper No. 4367209. doi:10.2139/ssrn.4367209
+
+Falk, B., Pathan, T., Rigas, A., and Tsoukalas, G. (2024). Blockchain governance: an
+empirical analysis of user engagement on DAOs. arXiv preprint arXiv:2407.10945.
+
+Austgen, J., Fábrega, A., Allen, S., Babel, K., Kelkar, M., and Juels, A. (2023). DAO
+decentralization: voting-bloc entropy, bribery, and dark DAOs. arXiv preprint. doi:10.
+48550/arXiv.2311.03530
+
+Fan, Y., Zhang, L., Wang, R., and Imran, M. A. (2024). Insight into voting in DAOs:
+conceptual analysis and a proposal for evaluation framework. Netw. Mag. Glob.
+Internetworking 38 (3), 92–99. doi:10.1109/MNET.137.2200561
+
+Axelsen, H., Jensen, J. R., and Ross, O. (2023). When is a DAO decentralized? arXiv
+preprint arXiv:2304.08160. J. Complex Syst. Inf. Model. Q., 51–75. doi:10.7250/csimq.
+2022-31.04
+
+Fritsch, R., Müller, M., and Wattenhofer, R. (2024). Analyzing voting power in
+decentralized governance: who controls DAOs? Blockchain Res. Appl. 5 (3), 100208.
+doi:10.1016/j.bcra.2024.100208
+
+Berthelsen, A. S., and Bjellerås, E. (2023). Best practices in decentralized autonomous
+organization (DAO) venture capital: a bibliometric analysis and systematic review.
+Master’s thesis, University of Agder. Available online at: https://hdl.handle.net/11250/
+3081667. (Accessed May 9, 2025).
+
+Fukuyama, F. (2016). Governance: what do we know, and how do we know it? Annu.
+Rev. Political Sci. 19, 89–105. doi:10.1146/annurev-polisci-042214-044240
+Gersbach, H., Mamageishvili, A., and Schneider, M. (2021). Vote delegation and
+misbehavior. arXiv preprint. doi:10.48550/arXiv.2102.08823
+
+Cardoso, A. G. (2022). Decentralized autonomous organizations – DAOs: the
+convergence of technology, law, governance, and behavioral economics. SSRN.
+doi:10.2139/ssrn.4341884
+
+Gilson, C., and Bouraga, S. (2024). Enhancing the democratic nature of voting
+processes within decentralized autonomous organizations. Digital Policy, Regul. Gov. 26
+(2), 169–187. doi:10.1108/DPRG-09-2023-0126
+
+Casella, A., Campbell, J., de Lara, L., Mooers, V., and Ravindran, D. (2022). Liquid
+democracy: two experiments on delegation in voting. SSRN. doi:10.2139/ssrn.4307183
+
+Green-Armytage, J. (2014). Direct voting and proxy voting. Const. Polit. Econ. 26 (2),
+190–220. doi:10.1007/s10602-014-9176-9
+
+Davidson, S. (2024). The private provision of public goods: the case of decentralized
+autonomous organizations. SSRN. doi:10.2139/ssrn.5041735
+
+Han, J., Lee, J., and Li, T. (2023). DAO governance. SSRN. doi:10.2139/ssrn.4346581
+Han, J., Lee, J., and Li, T. (2024). A review of DAO governance: recent literature and
+emerging trends. SSRN. doi:10.2139/ssrn.5074046
+
+De Filippi, P., Mannan, M., and Reijers, W. (2020). Blockchain as a conﬁdence
+machine: the problem of trust and challenges of governance. Technol. Soc. 62, 101284.
+doi:10.1016/j.techsoc.2020.101284
+
+Jessop, B. (1998). The rise of governance and the risks of failure: the case of economic
+development. Int. Soc. Sci. J. 50 (155), 29–45. doi:10.1111/1468-2451.00107
+
+Ding, Q., Liebau, D., Wang, Z., and Xu, W. (2023b). A survey on decentralized
+autonomous organizations (DAOs) and their governance. World Sci. Annu. Rev. Fintech
+1, 2350001. doi:10.2139/ssrn.4378966
+
+Frontiers in Blockchain
+
+Kaal, W. A. (2021). A decentralized autonomous organization (DAO) of DAOs.
+SSRN. doi:10.2139/ssrn.3799320
+
+15
+
+frontiersin.org
+
+Weidener et al.
+
+10.3389/fbloc.2025.1598283
+
+elements inﬂuence the long-term viability of DAOs (Doctoral dissertation). Open
+University of the Netherlands. doi:10.4233/uuid:c4eadda9-84ef-4430-91294bc7c8f50ee6
+
+Kim, S. H. (2024). Transitive delegation in social networks: theory and experiment.
+Eur. J. Political Econ. 82, 102531. doi:10.1016/j.ejpoleco.2024.102531
+Kitzler, S., Balietti, S., Saggese, P., Haslhofer, B., and Strohmaier, M. (2023). The governance
+of decentralized autonomous organizations: a study of contributors’ inﬂuence, networks, and
+shifts in voting power. 313, 330. doi:10.1007/978-3-031-78679-2_17
+
+Rikken, O., Janssen, M., and Kwee, Z. (2023). The ins and outs of decentralized
+autonomous organizations (DAOs): unraveling the deﬁnitions, characteristics, and
+emerging developments. Blockchain Res. Appl. 4, 100143. doi:10.1016/j.bcra.2023.
+100143
+
+Kurniawan, W., Jansen, S., and van der Werf, J. M. (2022). Voting mechanism
+selection for decentralized autonomous organizations. Available online at: https://
+secureseco.org/wp-content/uploads/2022/08/Voting_Mechanism_Selection_for_
+Decentralized_Autonomous_Organizations-3-1.pdf (Accessed May 9, 2025).
+
+Rikken, O., Janssen, M., Kwee, Z., Bolívar, R., and Scholl, H. J. (2019). Governance
+challenges of blockchain and decentralized autonomous organizations. Inf. Polity 24 (4),
+397–417. doi:10.3233/IP-190154
+
+Lloyd, T., O’Broin, D., and Harrigan, M. (2024). “The on-chain and off-chain
+mechanisms of DAO-to-DAO voting,” in IEEE international conference on blockchain
+(blockchain) (Copenhagen), 649–655. doi:10.1109/Blockchain62396.2024.00095
+
+Russell, S., and Norvig, P. (2021). Artiﬁcial intelligence: a modern approach. 4th ed.
+Pearson Education.
+
+Lu, C., Liu, Z., and He, P. (2024). The impact of delegation mechanism on the
+governance of decentralized autonomous organizations. PACIS 2024 Proc. 3. Available
+online at: https://aisel.aisnet.org/pacis2024/track15_govce/track15_govce/3. (Accessed
+May 9, 2025).
+
+Schädler, L., Lustenberger, M., and Spychiger, F. (2023). Analyzing decision-making
+in blockchain governance. Front. Blockchain 6, 1256651. doi:10.3389/fbloc.2023.
+1256651
+Schmid, S., and Shestakov, D. (2024). “Blockchain governance and liquid democracy quantifying decentralization in gitcoin and internet computer,” in Proceedings of the
+2024 workshop on advanced tools, programming languages, and platforms for
+implementing and evaluating algorithms for distributed systems (ApPLIED’24), 1–7.
+doi:10.1145/3663338.3663678
+
+Mehar, M., Shier, C., Giambattista, A., Gong, E., Fletcher, G., Sanayhie, R., et al.
+(2017). Understanding a revolutionary and ﬂawed grand experiment in blockchain: the
+DAO attack. J. Cases Inf. Technol. 21 (1), 19–32. doi:10.2139/ssrn.3014782
+Monteiro, T. D., Sanchez, O. P., and Moraes, G. H. S. M. D. (2024). Exploring offchain voting and blockchain in decentralized autonomous organizations. RAUSP
+Manag. J. 59 (4), 335–349. doi:10.1108/RAUSP-08-2023-0162
+
+Sharma, T., Potter, Y., Pongmala, K., Wang, H., Miller, A., Song, D., et al. (2024).
+Future of algorithmic organization: large-scale analysis of decentralized autonomous
+organizations (DAOs). arXiv Prepr. doi:10.48550/arXiv.2410.13095
+
+Nabben, K. (2023). Governance by algorithms, governance of algorithms: humanmachine politics in decentralised autonomous organisations (DAOs). PuntOorg Int. J. 8
+(1), 36–54. doi:10.19245/25.05.pij.8.1.3
+
+Smits, M., and Hulstijn, J. (2020). Blockchain applications and institutional trust.
+Front. Blockchain 3, 5. doi:10.3389/fbloc.2020.00005
+
+Özdemir Sönmez, F., Mulligan, C., Knottenbelt, W., and Jungnickel, M. (2021). DAO
+governance: Voting power, participation, and controversy—a review and an empirical
+analysis. doi:10.2139/ssrn.5008958
+
+Tamai, S., and Kasahara, S. (2024). DAO voting mechanism resistant to whale and
+collusion problems. Front. Blockchain 7, 1405516. doi:10.3389/fbloc.2024.1405516
+Tan, J., Merk, T., Hubbard, S., Oak, E. R., Rong, H., Pirovich, J., et al. (2023). Open
+problems in DAOs. arXiv Prepr. doi:10.48550/arXiv.2310.19201
+
+Panisi, F., Buckley, R. P., and Arner, D. W. (2019). Blockchain and public companies:
+a revolution in share ownership transparency, proxy voting and corporate governance?
+Stanf. J. Blockchain Law and Policy 2 (1), 1–41. Available online at: https://ssrn.com/
+abstract=3389045.
+
+Tricco, A. C., Lillie, E., Zarin, W., O’Brien, K. K., Colquhoun, H., Levac, D., et al.
+(2018). PRISMA extension for scoping reviews (PRISMA-ScR): checklist and
+explanation. Ann. Intern. Med. 169 (7), 467–473. doi:10.7326/m18-0850
+
+Peña-Calvin, A., Arroyo, J., Schwartz, A., and Hassan, S. (2024). “Concentration of
+power and participation in online governance: the ecosystem of decentralized
+autonomous organizations,” in Companion proceedings of the ACM Web conference
+2024 (Singapore: WWW ’24 Companion), 13–17. doi:10.1145/3589335.3651481
+
+Van Vulpen, P., Siu, J., and Jansen, S. (2024). Governance of decentralized
+autonomous organizations that produce open-source software. Blockchain Res. Appl.
+5, 100166. doi:10.1016/j.bcra.2023.100166
+Zariﬁs, A., and Fu, S. (2024). The second extended model of consumer trust in
+cryptocurrency payments, CRYPTOTRUST 2. Front. Blockchain 7, 1220031. doi:10.
+3389/fbloc.2024.1220031
+
+Peters, B. G. (2012). Institutional theory in political science: the new institutionalism.
+3rd ed. London: Continuum.
+Rhodes, R. A. W. (2007). Understanding governance: ten years on. Organ. Stud. 28
+(8), 1243–1264. doi:10.1177/0170840607076586
+
+Zhou, Y., Xue, L., Tian, J., An, J., and Zhao, X. (2024). “Shadow-centralization in
+decentralized autonomous organizations,” in International conference on information
+systems (ICIS). Available online at: https://aisel.aisnet.org/icis2024/blockchain/
+blockchain/1/. (Accessed May 9, 2025).
+
+Rikken, O. (2024). Governance of decentralized autonomous organizations: how
+business objectives, internal governance elements and external infrastructural
+
+Frontiers in Blockchain
+
+16
+
+frontiersin.org
+
+

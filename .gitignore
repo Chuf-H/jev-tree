@@ -12,3 +12,16 @@ dist/
 *.egg-info/
 artifacts/
 .DS_Store
+
+# Superego
+.superego/
+
+# Node & Foundry
+node_modules/
+**/node_modules/
+guard7702/**/cache/
+guard7702/**/out/
+guard7702/**/dist/
+
+# TestGuard
+.testguard/

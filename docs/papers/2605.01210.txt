@@ -1,0 +1,1681 @@
+arXiv:2605.01210v1 [cs.CR] 2 May 2026
+
+Write-Domain Separation and Non-Custodial Enforcement:
+A Structural Impossibility in Account-Based Ledgers,
+with a Commitment-Based Construction
+Matthias Hauser
+research@blockbird.io
+Abstract
+Account-based ledgers — standard externally-owned accounts (EOAs), ERC-4337 smart
+accounts, post-Pectra EIP-7702 delegated EOAs — place the holder of the controlling key at
+the apex of asset authorization. We ask a structural question about ledger access control:
+under this authorization model, can a protocol enforce the future disposition of an asset
+without taking custody and without requiring the owner’s cooperation at enforcement time? We
+formalize the target as Non-Custodial Enforced Encumbrance (NCEE), a four-property
+specification covering self-custody, transition restriction, irrevocability, and permissionless
+enforcement.
+This paper is primarily a contribution to ledger access-control theory; cryptographic
+primitives appear as the construction’s tools rather than as the main object of study.
+
+Result 1 (impossibility). We define the Key Sovereignty Axiom (KS): a ledger
+
+model satisfies KS if the holder of the controlling key can always authorize a transition that
+weakens any active protocol-imposed restriction. We prove that any ledger satisfying KS
+cannot realize NCEE. Standard EOAs, ERC-4337 smart accounts (in the standard single-key
+configuration), and EIP-7702 delegated EOAs satisfy KS for their standard asset paths; we
+therefore obtain concrete impossibility statements for each. The structural reason in each case
+is named explicitly — for EIP-7702, it is that protocol-level processing of new authorization
+tuples cannot be intercepted by current delegate code.
+
+Result 2 (necessity and witness). We define Asset-Authorization Coupling
+(AAC): an asset type has AAC if valid transitions are cryptographically coupled to the
+mechanism’s current restriction state. We prove that AAC is necessary for NCEE in the
+transfer-dichotomous asset setting studied here. To witness the positive side, we introduce
+the envelope, a primitive for commitment-based private-state ledgers that binds a note,
+a condition tree, and a redistribution intent to protocol-maintained marker sets. The
+construction separates ordinary spend nullifiers from a new encumbrance-namespace nullifier
+derived from note randomness rather than the owner key, so that permissionless enforcement
+does not require access to owner key material. We prove the envelope realizes NCEE under
+stated cryptographic assumptions and a deployment assumption that the marker-set registry
+is immutable; three concrete deployment templates instantiating the immutability assumption
+are given.
+Result 3 (analysis and implementation). We define games for encumbrance
+
+integrity, settlement security, key-compromise resilience, and encumbrance indistinguishability,
+and state explicitly which guarantees are theorem-level within the model, which are reductionbased under stated assumptions, and which additionally rely on heuristic or implementation
+
+1
+
+assumptions. A reference implementation in Noir and UltraHonk supports the empirical
+claims; we report concrete gas measurements, recursive aggregation benchmarks, and a
+practical-economics analysis showing the position-value range over which the construction is
+economical on L1 and L2 deployments.
+Keywords. non-custodial enforcement, write-domain separation, ledger access control,
+key sovereignty, account abstraction (ERC-4337, EIP-7702), commitment-based ledgers,
+zero-knowledge proofs, nullifier separation, conditional execution, decentralized finance.
+MSC Classification. 68M14 (Distributed systems), 94A60 (Cryptography), 94A62 (Authentication, digital signatures and secret sharing).
+ACM CCS. Security and privacy → Distributed systems security; Theory of computation
+→ Cryptographic primitives.
+
+Contents
+1 Introduction
+1.1 Main Theorem-Level Idea . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.2 Main Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.3 What Is Proved, and at What Strength . . . . . . . . . . . . . . . . . . . . . . .
+1.4 Why KS and AAC Are the Right Abstractions . . . . . . . . . . . . . . . . . . . .
+1.5 Paper Organization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+4
+4
+5
+5
+6
+6
+
+2 Preliminaries
+2.1 Cryptographic Primitives . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2.2 Account-Based Ledger Model (ABLM) . . . . . . . . . . . . . . . . . . . . . . . .
+2.3 Private-State Ledger Model (PSLM) . . . . . . . . . . . . . . . . . . . . . . . . .
+2.4 Non-Custodial Enforced Encumbrance . . . . . . . . . . . . . . . . . . . . . . . .
+
+6
+6
+7
+8
+8
+
+3 Write-Domain Separation and Impossibility
+3.1 Key Sovereignty and Asset-Authorization Coupling . . . . . . . . . . . . . . . . .
+3.2 PSLM Achievability . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3.3 Execution Guarantees vs. Asset Guarantees . . . . . . . . . . . . . . . . . . . . .
+
+8
+8
+12
+12
+
+4 The Envelope Construction
+4.1 Overview . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.2 Note Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.3 Domain-Separated Nullifier Construction . . . . . . . . . . . . . . . . . . . . . . .
+4.4 Forward and Backward Key-Compromise Security . . . . . . . . . . . . . . . . .
+4.5 Condition Tree . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.6 Redistribution Intent and Position Commitment . . . . . . . . . . . . . . . . . .
+4.7 Envelope Definition . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.8 Encumbrance Circuit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.9 Spend Circuit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.10 Settle Circuit . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.11 Formal Properties E1–E6 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4.12 Expire Function . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+13
+13
+13
+13
+14
+14
+15
+15
+15
+16
+17
+17
+18
+
+2
+
+5 Security Analysis
+5.1 Assumptions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5.2 Encumbrance Security . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5.3 Enforcement Safety and Completeness . . . . . . . . . . . . . . . . . . . . . . . .
+5.4 Oracle Manipulation: Operational Considerations . . . . . . . . . . . . . . . . . .
+5.5 Encumbrance Indistinguishability . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5.6 Settle Circuit Security . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5.7 Deployment Models Satisfying AS7 . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+18
+18
+19
+20
+20
+21
+22
+22
+
+6 Privacy Analysis
+
+24
+
+7 Application: Non-Custodial Collateralized Lending
+7.1 Practical Economics: Position-Value Regimes . . . . . . . . . . . . . . . . . . . .
+
+24
+25
+
+8 Related Work
+8.1 Private Smart Contracts (Hawk) . . . . . . . . . . . . . . . . . . . . . . . . . . .
+8.2 Private Record and Note Systems (Zexe, Veri-Zexe, Zcash, Penumbra, Railgun,
+Tornado-style pools) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+8.3 Bitcoin Covenant-Style Restrictions (MAST, CTV) . . . . . . . . . . . . . . . . .
+8.4 Account-Abstraction and Delegation Frameworks (ERC-4337, ERC-7710, ERC7715, EIP-7702) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+8.5 Keeper and Automation Networks (Chainlink Automation, Gelato, Keep3r) . . .
+8.6 Intent and Solver Frameworks (ERC-7683, CoW Protocol, Anoma) . . . . . . . .
+8.7 Comparative Claim . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+26
+26
+
+9 Limitations
+
+28
+
+10 Conclusion
+
+29
+
+A Complete Security Game Definitions
+A.1 Gencumber . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+A.2 EIG (Encumbrance Indistinguishability Game) . . . . . . . . . . . . . . . . . . .
+A.3 Gfwdback . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+A.4 Gagent_key . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+A.5 Gsettle . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+30
+30
+31
+31
+31
+31
+
+B Extended Privacy Analysis
+B.1 Durable Pseudonym Lifecycle . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+B.2 Enforcement Disclosure . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+B.3 Blinded Position Commitment Variant . . . . . . . . . . . . . . . . . . . . . . . .
+
+31
+31
+31
+32
+
+C Threshold Keeper Protocol
+
+32
+
+D Performance Benchmarks and Proof Aggregation
+
+32
+
+E BLS12-381 Partial Implementation
+
+33
+
+3
+
+26
+27
+27
+27
+27
+28
+
+1
+
+Introduction
+
+A recurring goal in decentralized finance is to let a borrower retain direct control of collateral
+while still allowing a protocol to enforce liquidation when a public condition is met. In deployed
+systems, that guarantee is usually obtained by avoiding the problem: the asset is moved into
+protocol-controlled custody, and enforcement is easy because control has already changed hands.
+The harder question is whether the same guarantee can be obtained without custody.
+This paper studies that question at the level of ledger structure rather than wallet interface or
+mechanism engineering. The relevant issue is not whether a system exposes a convenient policy
+language, but whether the asset’s native authorization path can bypass the mechanism after
+the encumbrance is created. The paper’s central claim is therefore theorem-driven: the decisive
+distinction is whether authorization remains under unilateral owner control or is cryptographically
+tied to mechanism state.
+We formalize the target as Non-Custodial Enforced Encumbrance (NCEE). Informally,
+NCEE asks for four properties at once:
+1. the owner retains the key and no third party is a required co-signer;
+2. while the encumbrance is active, the asset may move only along mechanism-defined paths;
+3. the owner cannot unilaterally remove the encumbrance; and
+4. any third party may trigger enforcement when the public condition is met.
+The paper revolves around one structural theorem and one witnessing construction. The theorem
+shows where NCEE is impossible. The construction shows that the obstruction is not universal.
+Everything else in the paper is organised around making that separation precise.
+
+1.1
+
+Main Theorem-Level Idea
+
+The central distinction is what we call write-domain separation. If the owner’s native
+authorization path can always issue a valid transfer outside the mechanism, then any purported
+encumbrance can be weakened unilaterally and NCEE fails. If, instead, a valid spend path remains
+cryptographically checked against protocol-maintained restriction state, then non-custodial
+enforcement becomes possible.
+We formalize the negative side through the Key Sovereignty Axiom (KS) and the positive
+side through Asset-Authorization Coupling (AAC). KS isolates the single feature that matters
+for impossibility in the setting studied here: the owner’s native authorization path can always
+weaken an active restriction. AAC isolates the enabling feature on the positive side: a valid state
+transition is inseparable from the mechanism’s current restriction state.
+These definitions are intended to be sparse rather than encyclopedic. They do not try to
+classify every wallet design or every hybrid execution architecture. They are chosen because they
+isolate where enforcement power lives. In the transfer-dichotomous asset setting studied here,
+that is the level at which the negative and positive sides of the paper line up cleanly.
+
+4
+
+1.2
+
+Main Results
+
+The paper has three main theorem-level components.
+Result 1: Impossibility for KS asset paths. Any ledger model satisfying KS cannot realize
+NCEE. The force of the result is model-level: once KS holds for an asset path, refinements
+inside that same authorization path do not recover NCEE within the setting analysed here. As
+concrete instantiations, we show that standard EOAs, ERC-4337 smart accounts, and post-Pectra
+EIP-7702 delegated EOAs satisfy KS for their standard asset paths.
+Result 2: Necessity of AAC and a witnessing positive construction. AAC is necessary
+for NCEE in the asset setting formalized here. We then construct an envelope primitive in an
+extended private-state ledger model and prove that it realizes NCEE under explicit cryptographic
+assumptions and a deployment assumption that the marker-set registry is immutable. The
+construction therefore witnesses the positive side of the separation rather than merely naming it.
+Result 3: Explicit security scope. The envelope binds a note, a condition tree, and a
+redistribution intent. It separates ordinary spend nullifiers from encumbrance nullifiers, derives
+the latter from note randomness rather than the owner key, and enforces restriction checks through
+zero-knowledge circuits plus on-chain marker-set membership. We analyze the construction with
+explicit games for encumbrance integrity, settlement, key compromise, and indistinguishability,
+and we keep theorem-level, conditional, and empirical claims separate throughout. The revised
+version of this paper additionally provides explicit deployment-model templates for the registryimmutability assumption (§5.7) and a practical-economics analysis of the position-value regime
+in which the construction is cost-effective (§7.1).
+
+1.3
+
+What Is Proved, and at What Strength
+
+Layer
+
+Contribution type
+
+Main dependencies
+
+Model layer
+
+Formalizes NCEE, KS, AAC in the
+abstract ledger setting
+Theorem-level: NCEE impossible for KS
+ledgers
+Theorem-level: AAC necessary for NCEE
+in the transfer-dichotomous setting
+Theorem-level: envelope construction
+achievable in extended PSLM
+Conditional / empirical:
+indistinguishability, artifacts,
+benchmarks
+
+None beyond the paper’s abstract model
+
+Impossibility layer
+Necessity layer
+Construction layer
+Security & impl.
+
+Model layer
+Model layer
+Stated cryptographic assumptions and
+AS7
+AS5–AS6 and implementation
+environment
+
+Table 1: Contribution layers and their logical dependencies.
+This distinction matters. The paper’s central contribution is the structural separation
+established in the formal model. The envelope matters because it witnesses the positive side of
+that separation under explicit assumptions. The privacy, indistinguishability, and implementation
+5
+
+results support that picture, but they are logically downstream and should be read at their stated
+strength.
+
+1.4
+
+Why KS and AAC Are the Right Abstractions
+
+The model does not attempt to classify all imaginable forms of conditional control, delegation, or
+recovery. Its scope is the standard asset setting formalized here, where the question is whether
+enforced encumbrance can coexist with self-custody under the four NCEE properties.
+The deepest question for the formal model is whether KS and AAC are merely useful labels or
+whether they capture the right structural distinction. Within the scope of this paper, we believe
+they do. KS isolates unilateral weakening power over an already-active restriction. AAC isolates
+the complementary fact that a valid transition cannot be detached from the mechanism’s live
+restriction state. The point of the pair is not breadth for its own sake, but parsimony: they are
+among the sparsest abstractions we know that let the negative and positive sides of the paper
+line up in one ledger-independent statement.
+Equally important is what the model does not claim. The paper does not assert that every
+real-world asset system falls neatly into two exhaustive classes, nor that every hybrid middleware
+design is captured by these definitions. The claim is narrower: for the asset setting studied here,
+KS captures the structural escape path that defeats NCEE, while AAC captures the structural
+coupling that makes the witness construction possible.
+
+1.5
+
+Paper Organization
+
+Section 2 fixes notation and ledger models. Section 3 is the center of the paper: it states
+the structural separation, proves impossibility under KS, proves the necessity of AAC in the
+transfer-dichotomous setting, and then gives the matching constructive result in the extended
+PSLM. Section 4 presents the envelope construction as the witness on the positive side. Section 5
+discharges the main security obligations and states assumption dependence explicitly. Sections 6
+and 7 discuss privacy scope and the lending application as downstream consequences of that
+witness rather than independent centers of gravity. Section 8 positions the contribution relative
+to adjacent work. Section 9 (new in this revision) collects limitations explicitly. The appendices
+collect full games, extended privacy notes, threshold extensions, benchmarks, and implementation
+details.
+
+2
+
+Preliminaries
+
+2.1
+
+Cryptographic Primitives
+
+We use Poseidon2 throughout, instantiated in-circuit through Barretenberg’s native
+poseidon2_permutation opcode. Poseidon2k denotes the width-4 permutation applied to
+k non-zero inputs with zero padding. The protocol uses five fixed domain tags: CM_TAG
+for commitments, SPEND_TAG for spend nullifiers, ENCUMBER_TAG for encumbrance nullifiers,
+REPAY_TAG for settlement-related commitments, and PARAMS_TAG for committed external
+parameters such as the IRM address. These are fixed protocol constants. Security arguments
+that model the hash as a random oracle are explicitly conditional on the indifferentiability
+assumption AS6.
+
+6
+
+The note commitment is
+cm(N ) = Poseidon24 (v, r, pkx , aid).
+The spend nullifier is
+nf spend (N ) = Poseidon23 (sk, cm(N ), SPEND_TAG),
+and the encumbrance nullifier is
+nf encumber (N ) = Poseidon23 (r, cm(N ), ENCUMBER_TAG).
+Lemma 2.1 (Computational Hiding). Under AS6, cm(N ) is computationally hiding when r is
+sampled uniformly.
+We assume a zk-SNARK system Π = (Setup, Prove, Verify) with completeness, knowledge
+soundness, and computational zero knowledge. The reference instantiation uses Noir compiled to
+ACIR and proved with UltraHonk.
+Merkle trees are binary with Poseidon2 internal nodes. VerifyPath(root, leaf, π) denotes
+standard membership verification.
+
+2.2
+
+Account-Based Ledger Model (ABLM)
+
+Definition 2.2 (ABLM). An account-based ledger model is (A, S, T, →), where A is the address
+set, S the global state map over accounts, T the transaction type set, and → the state transition
+function.
+Definition 2.3 (Write Domain). For secret key sk, the write domain W (sk, S) is the set of
+account fields that can be modified by some valid transaction authorized solely by sk.
+Fact 2.4. In an ABLM, the key holder’s own account state lies in its write domain.
+Definition 2.5 (Key Sovereignty in ABLM Form). A ledger satisfies key sovereignty if whenever
+a protocol-imposed restriction is active on an asset controlled by sk, there exists a transaction
+authorized solely by sk that weakens that restriction.
+Lemma 2.6. Every ABLM satisfies key sovereignty.
+Proof. By Fact 2.4, the owner’s balance-bearing account state lies in the owner’s write domain.
+Hence there exists a valid transaction authorized solely by the owner’s key that transfers the
+asset to a fresh address outside the protocol’s restriction scope. That transaction weakens the
+active restriction, so the ledger satisfies key sovereignty.
+
+7
+
+2.3
+
+Private-State Ledger Model (PSLM)
+
+Definition 2.7 (PSLM). A private-state ledger model is (N, C, Σ, Schain , T, →), where N is the
+note space, C the commitment set, Σ the spend-nullifier set, and Schain the public chain state.
+Definition 2.8 (Note). A note is N = (v, r, pk, aid) with commitment cm(N ). It is spendable if
+cm(N ) ∈ C and nf spend (N ) ∈
+/ Σ.
+For the envelope construction we extend the PSLM with two protocol-maintained sets:
+• Mactive , the active encumbrance-marker set;
+• Mtomb , the consumed-marker set.
+By construction, no user transaction authorized solely by sk can write to these sets; that
+separation is made precise by AS7.
+
+2.4
+
+Non-Custodial Enforced Encumbrance
+
+Definition 2.9 (NCEE). A mechanism satisfies NCEE if it simultaneously achieves:
+P1 Self-custody: the owner retains the key and no third party is a required co-signer;
+P2 Transition restriction: the asset may move only along mechanism-defined paths while
+encumbered;
+P3 Irrevocability: the owner cannot unilaterally remove the encumbrance;
+P4 Permissionless enforcement: any third party may trigger enforcement when the public
+condition is satisfied.
+
+3
+
+Write-Domain Separation and Impossibility
+
+Proof roadmap. This section establishes the structural spine of the paper. Theorem 3.4
+gives the negative result: any KS asset path fails NCEE, and its proof does not require transferdichotomy. Theorem 3.6 gives the necessity direction: in the transfer-dichotomous setting studied
+here, NCEE requires AAC. Corollaries 3.8–3.13 instantiate KS for standard Ethereum-style asset
+paths with worked examples (revised in this draft to walk through each abstraction at code level).
+Theorem 3.16 then witnesses achievability in the extended PSLM via the envelope construction.
+The model-level theorems of this section are proved inline; the cryptographic obligations on
+which Theorem 3.16 relies are discharged in Section 5, with the underlying game definitions
+collected in Appendix A.
+
+3.1
+
+Key Sovereignty and Asset-Authorization Coupling
+
+Definition 3.1 (Key Sovereignty Axiom, KS). A ledger model satisfies KS if the holder of the
+controlling key can always authorize a valid transaction that weakens any active protocol-imposed
+restriction on the asset.
+Definition 3.2 (Asset-Authorization Coupling, AAC). An asset type has AAC if valid asset
+transitions are cryptographically coupled to the mechanism’s current restriction state, so that
+the owner key alone cannot move the asset independently of that state.
+8
+
+Definition 3.3 (Transfer-Dichotomous Asset Class). An asset class is transfer-dichotomous if
+each valid spend path falls on one of two sides: either it preserves a unilateral owner-authorized
+weakening path of the KS kind, or it requires coupling to the mechanism’s live restriction state
+of the AAC kind.
+Theorem 3.4 (Impossibility in KS Ledgers). No ledger model satisfying KS can support NCEE.
+Proof. If KS holds, then whenever a mechanism purports to impose an irrevocable encumbrance,
+the owner can still authorize a transaction that weakens the restriction. That contradicts P3.
+Hence all four NCEE properties cannot hold simultaneously.
+Remark 3.5. Theorem 3.4 does not require transfer-dichotomy. It is a direct impossibility
+statement about any ledger model satisfying KS.
+Theorem 3.6 (AAC Is Necessary for NCEE in the Transfer-Dichotomous Setting). If a ledger
+model supports NCEE for an asset type in the transfer-dichotomous setting studied here, then the
+relevant asset type must have AAC.
+Proof. Suppose a mechanism supports NCEE for an asset type in the transfer-dichotomous setting,
+but AAC fails. Since the setting is transfer-dichotomous, failure of AAC means that the relevant
+spend path lies on the KS side of the dichotomy: the owner retains a unilateral transition that
+weakens the active restriction without consulting the mechanism’s live restriction state. But
+then Theorem 3.4 applies and rules out NCEE, a contradiction. Therefore any asset type that
+supports NCEE in this setting must have AAC.
+Remark 3.7. Theorem 3.6 is the step that does require transfer-dichotomy. Its role is to turn
+the negative result of Theorem 3.4 into a necessity statement for AAC within the asset setting
+analysed here.
+Concrete Account-Class Instantiations (Expanded in This Revision)
+We now instantiate KS for the three Ethereum-canonical account abstractions. The original draft
+of this paper presented each as a single short paragraph; reviewers correctly observed that the
+interesting content of these corollaries is whether each abstraction’s specific construct (validation
+logic refinement, executor delegation, code injection) closes the KS escape. We therefore expand
+each below with a concrete walk-through.
+Corollary 3.8 (Standard EOAs). Standard EOAs satisfy KS and therefore cannot support NCEE
+for standard account-held asset paths.
+Proof. A standard EOA is an address a = H(pk) associated with a secret signing key sk. The
+native authorization path is: any RLP-encoded transaction whose ECDSA signature recovers to
+pk produces a valid state transition. For an asset held in a’s balance field (ETH) or in a token
+contract slot keyed by a (ERC-20, ERC-721), the spending semantics reduce to: transfer to a
+destination of the owner’s choice, conditioned only on signature validity and nonce ordering.
+Suppose a mechanism M purports to impose an active restriction R on the asset (for instance,
+by recording a flag in M ’s storage or by issuing the owner a non-transferable token claim against
+the asset). Because the asset’s transfer path is checked against signature validity and account
+state internal to the asset’s own contract, not against M ’s storage, the owner can sign a transfer
+transaction to a fresh address a′ that bypasses M entirely. The destination a′ is outside M ’s
+9
+
+restriction scope by construction. Therefore sk alone authorizes a transition that weakens R.
+That is exactly a KS-style unilateral weakening path, so the claim follows from Theorem 3.4.
+Remark 3.9. The intuition is that EOAs expose the asset’s transfer path below any policy layer a
+mechanism could install above them. Token approvals, allowances, and protocol locks all live at
+the token-contract layer; they do not constrain the EOA’s ability to transfer ownership of an
+asset whose transfer logic is written into a separate contract that does not consult M ’s state.
+Corollary 3.10 (ERC-4337 Smart Accounts in the Single-Key Setting). ERC-4337 smart
+accounts whose authorization policy reduces to a single owner-controlled signing key (the “standard
+single-key setting”) satisfy KS for standard asset paths and therefore cannot support NCEE for
+those asset paths.
+Scope clarification. ERC-4337 admits modular wallets with diverse authorization logic,
+including multi-signature threshold accounts, social-recovery wallets where the owner key alone
+is insufficient to authorize transfers, and accounts with externally-imposed module locks. In
+such setups the “controlling key” is no longer a single secret known to one party, and the KS
+question must be re-asked for the actual authorization predicate. Corollary 3.10 addresses the
+standard single-key configuration that dominates current ERC-4337 deployments; richer modular
+configurations may admit hybrid analyses outside the transfer-dichotomous scope (§9).
+Proof. ERC-4337 introduces a wallet-as-contract abstraction with two relevant interfaces:
+validateUserOp (validation logic the wallet runs to admit a UserOperation) and the wallet’s
+own execute entrypoint (which dispatches the validated operation). Both are wallet-internal:
+the wallet may impose any restriction it likes on the operations it admits.
+Consider a wallet contract W in the standard single-key setting, with controlling key sk. An
+asset held directly by W (ETH balance, ERC-20 allowance owned by W ) can be transferred
+only by W ’s execute path. So far this looks like progress: the wallet can in principle refuse
+operations that violate a protocol restriction.
+However, the relevant asset for NCEE is typically not held by W alone. Standard asset paths
+route through token contracts (ERC-20, ERC-721) whose transfer and transferFrom entry
+points authorize on the basis of msg.sender ownership and approvals, not on the basis of any
+policy enforced by W . The owner can always (a) deploy a fresh wallet W ′ via the standard ERC4337 factory under the same controlling key, or (b) submit a UserOperation through W whose
+execute call invokes the token contract’s transfer to a destination outside the mechanism’s
+scope. The validateUserOp hook can refuse some operations, but in the single-key setting it
+cannot refuse all transfer paths because the owner controls W ’s validation rules and can redeploy
+them through a transaction authorized by sk.
+More formally: in the single-key setting, validateUserOp and execute reduce to predicates
+whose ultimate authority is sk. A mechanism M that records a restriction in its own storage
+cannot bind W ’s rules without W ’s cooperation, and the holder of sk can always replace, upgrade,
+or sidestep those rules through a fresh deployment or upgrade authorized by sk. Therefore the
+KS-style escape persists for the standard asset setting.
+ERC-4337 can refine validation logic and execution policy. What it cannot do, in the standard
+single-key asset setting, is remove the owner’s underlying ability to route the asset through a
+path authorized by the controlling key. The relevant asset path therefore still satisfies KS, and
+Theorem 3.4 applies.
+10
+
+Remark 3.11. The subtle point is that ERC-4337 moves the policy layer up to the wallet contract
+but does not move the asset transfer path up. Token contracts continue to authorize on caller
+identity, and the caller is whoever the wallet’s execute routes the call as. The mechanism’s
+restriction state is not consulted in that authorization. A construction that genuinely closed KS
+would require routing the asset through a contract that consults the mechanism’s restriction state
+on every transition — which is precisely what AAC requires, and what the envelope construction
+provides.
+Remark 3.12 (Multi-signature and social-recovery wallets). For a Safe-style multi-signature wallet
+with m-of-n threshold, the relevant authorization is the threshold predicate, not a single key. If
+the threshold is owner-only (the owner holds ≥ m of the n keys), the analysis above applies and
+KS holds for the owner. If the threshold genuinely requires non-owner signers, the wallet has
+effectively introduced co-signers, which violates NCEE-P1 (no required third-party co-signer).
+Either way, multi-signature wallets do not provide a path to NCEE that escapes the structural
+argument; they shift which property fails.
+Corollary 3.13 (EIP-7702 Delegated EOAs). Post-Pectra EIP-7702 delegated EOAs satisfy KS
+for standard asset paths and therefore cannot support NCEE for those asset paths.
+Proof. EIP-7702 lets an EOA install code at its own address by signing an authorization tuple
+(chain_id, nonce, delegate_addr). The signature is verified at the EVM transaction-validation
+layer, before any user-level execution; the signed tuple updates the account’s code pointer, after
+which calls to the EOA are dispatched through the installed delegate code D.
+Two structural facts preserve KS, and the first is the load-bearing one for the impossibility
+argument:
+Fact 1 (protocol-level re-authorization is uninterceptible). A new EIP-7702 authorization tuple is processed at the protocol layer of EVM transaction validation, not inside
+the currently-active delegate D. Even if D’s logic is hostile to re-delegation — for instance,
+even if D’s entrypoints unconditionally revert — D has no mechanism by which to intercept
+or prevent the owner from signing and submitting a fresh authorization tuple that replaces D
+with a different delegate D′ (or removes the delegation entirely). The transaction validating the
+new authorization does not call into D’s code at all. This is the structural reason that EIP-7702
+cannot achieve irrevocability: the very layer that would need to refuse re-authorization (the
+protocol layer) is not programmable from within the delegate.
+Fact 2 (token contracts do not consult D). Standard asset paths route through token
+contracts whose transfer entry points authorize on caller identity. If D refuses to dispatch a
+transfer, the owner installs D′ via Fact 1 and routes through it; equivalently, the asset’s transfer
+logic in the token contract does not consult D’s policy at all.
+Hence the owner of sk retains a KS-style unilateral weakening path: they sign a fresh
+authorization tuple at the protocol layer, install permissive delegate code, and execute the
+transfer. Theorem 3.4 therefore applies, and NCEE fails for standard asset paths under EIP7702.
+Remark 3.14. EIP-7702 is sometimes presented as “account abstraction without a contract wallet.”
+For the NCEE question its structural limitation is sharper than ERC-4337’s: even a delegate D
+that exposes no permissive entrypoints cannot enforce restrictions, because the owner can simply
+replace it with one that does. The protocol-layer authorization is the load-bearing escape route,
+not the delegate’s policy.
+11
+
+Corollary 3.15 (Model-Scoped Characterization). For the transfer-dichotomous asset classes
+considered in this paper, NCEE is realizable only for asset types whose spend path has AAC, and
+the envelope provides such a witness in the extended PSLM.
+Proof. Theorem 3.4 rules out NCEE whenever KS holds. Theorem 3.6 shows that, in the transferdichotomous setting analysed here, any asset type supporting NCEE must therefore have AAC.
+Theorem 3.16 gives a witness on the positive side by exhibiting an AAC-style construction in the
+extended PSLM.
+
+3.2
+
+PSLM Achievability
+
+Theorem 3.16 (PSLM Achievability). Under AS7, the envelope construction of §4 satisfies
+NCEE for notes in the extended PSLM.
+Proof. P1 (self-custody): Ownership remains with the note holder, and no third-party cosigning is required. The owner proves spendability or settlement conditions through the construction’s own circuits rather than by surrendering key control.
+P2 (transition restriction): The Spend circuit and the on-chain checks jointly reject
+ordinary spends while the corresponding encumbrance marker remains in Mactive . Valid note
+movement is therefore coupled to the mechanism’s active restriction state rather than to the
+owner key alone.
+P3 (irrevocability): Under AS7, the marker sets are writable only through the fixed registry
+state machine, whose permitted exits are settle, enforce, and expire. The owner cannot
+unilaterally clear Mactive outside those defined paths.
+P4 (permissionless enforcement): enforce is callable by any party once the condition is
+met and does not require owner cooperation.
+Hence all four NCEE properties hold in the model, conditional on AS7 and the cryptographic
+assumptions stated in Section 5. Section 4 supplies the Spend-circuit binding needed for P2,
+and §4.10 together with Section 5 supplies the settlement and state-machine conditions used in
+P3.
+
+3.3
+
+Execution Guarantees vs. Asset Guarantees
+
+Delegation frameworks such as ERC-4337, ERC-7710, and ERC-7715 can regulate who submits
+a transaction or how a wallet checks it. Within the asset setting studied here, that is not yet
+enough to alter the theorem: if the underlying asset path still preserves a KS-style unilateral
+escape route, execution policy remains downstream of the structural obstacle. The envelope
+addresses the complementary layer. It is not a richer policy wrapper around an ordinary asset
+path; it is the witnessing construction on the AAC side of the separation, where valid spending is
+tied to protocol-maintained marker sets in a commitment-based model.
+
+12
+
+4
+
+The Envelope Construction
+
+4.1
+
+Overview
+
+The envelope is the paper’s witness on the positive side of the separation. It binds a note N to a
+condition tree Tc and a redistribution intent I. Once registered, the note’s encumbrance marker
+enters Mactive , and every valid transition must respect that state. The owner still holds the note
+key, but key ownership alone no longer yields an unconstrained spend.
+Lifecycle.
+[Reg]
+create(E,Pi_enc)
+-> M_active += nf_encumber(N)
+[A] Settle: settle(eid, Pi_settle)
+-> M_tomb
++= nf_encumber(N)
+[B] Enforce: enforce(eid, oracleData) // cond(S)=1
+-> M_tomb
++= nf_encumber(N)
+[C] Expire: block.timestamp > deadline, not cond(S):
+expire(eid) -> M_tomb += nf_encumber(N)
+Remark 4.1 (Double-Execution Guard). Paths A, B, and C must all begin by checking
+nf encumber (N ) ∈ Mactive and reverting otherwise. With that ordering, concurrent attempts
+cannot both succeed: the first successful path removes the marker from Mactive , and every later
+path fails the same membership check.
+
+4.2
+
+Note Model
+
+Definition 4.2 (Note). N = (v ∈ Fp , r ∈ Fp , pk ∈ G, aid ∈ Fp ). Commitment cm(N ) =
+Poseidon24 (v, r, pkx , aid), where pkx is the x-coordinate of pk on Grumpkin (embedded in BN254;
+short Weierstrass y 2 = x3 − 17) or Jubjub (embedded in BLS12-381; twisted Edwards −u2 + v 2 =
+1 + d · u2 v 2 ) depending on the target field.
+
+4.3
+
+Domain-Separated Nullifier Construction
+
+Definition 4.3 (Encumbrance Nullifier).
+nf encumber (N ) = Poseidon23 (r, cm(N ), ENCUMBER_TAG),
+where r is the note’s blinding factor (not owner_sk).
+The spend nullifier nf spend (N ) = Poseidon23 (sk, cm(N ), SPEND_TAG) is keyed by sk, so compromise of sk naturally identifies the notes that key can spend. The encumbrance nullifier is
+designed to avoid inheriting that leakage: it is keyed by r, not by sk, so key compromise does not
+by itself reveal which notes are or were encumbered. The domain tags from §2 keep the spend
+and encumbrance namespaces disjoint except with collision probability εcr .
+Relation to prior nullifier constructions. Existing shielded-note systems derive nullifiers
+from key-controlled material. Zcash Sapling [HBHW24] computes nf = PRFnfSapling
+(ρ), where
+nk
+nk is the holder’s nullifier-deriving key (a public scalar derived from the spending key) and ρ is
+note-specific randomness. Penumbra [Pen24] similarly derives nullifiers from key-derived material.
+13
+
+The construction works for those systems because their threat model assumes the holder is the
+only party that needs to recognize a nullifier as the holder’s own.
+The contribution here is structural rather than a new hash recipe: NCEE-P4 (permissionless
+enforcement) requires that a third party — with no access to sk or nk — can recognize and act
+on encumbrance state. Therefore the encumbrance namespace must be derivable without the
+owner key. Deriving nf encumber from r alone, with a domain tag separating it from the spend
+namespace, is the minimal change that satisfies this requirement while preserving the spend
+namespace’s standard key-derived recipe. We are not aware of prior shielded-note systems that
+maintain two namespaces with different key dependencies for this reason.
+
+4.4
+
+Forward and Backward Key-Compromise Security
+$
+
+Definition 4.4 (Game Gfwdback ). Setup. Challenger C generates (sk, pk) and (r0 , r1 ) ←
+− Fp × Fp .
+Two notes N0 = (v, r0 , pk, aid), N1 = (v, r1 , pk, aid). C flips b ← {0, 1} and registers an envelope
+for Nb . The adversary A is given: sk, pk, cm(N0 ), cm(N1 ), nf encumber (Nb ) (the on-chain observable),
+and all on-chain state. A outputs b′ ∈ {0, 1} and wins if b′ = b.
+AdvGfwdback (A, λ) = Pr[A wins] − 12 .
+Proposition 4.5 (Nullifier Key-Compromise Security — Conditional on AS6). This result is
+conditional on AS6 (Poseidon2 indifferentiability, a heuristic assumption; see §5.1). Under AS6
+(random oracle model for Poseidon23 ), for any PPT adversary A:
+AdvGfwdback (A, λ) ≤ εcr + QH /|Fp |,
+where QH is the number of random oracle queries A makes and εcr is the collision-resistance
+advantage against Poseidon23 .
+
+4.5
+
+Condition Tree
+
+Definition 4.6 (Condition Tree). The condition tree is the public predicate against which
+permissionless enforcement is checked. It is a binary tree with leaf types:
+• PriceLeaf: (oracle_addr, asset_pair, op ∈ {≤, ≥, <, >}, threshold)
+• TimeLeaf: (timestamp, op ∈ {≤, ≥})
+• VolatilityLeaf: (oracle_addr, asset_pair, window, op, threshold)
+• OnChainStateLeaf: (contract_addr, calldata, op, threshold)
+Internal nodes: AND, OR (binary), NOT (unary).
+Gas complexity.
+
+Let Tc have k leaves. On-chain evaluation costs
+G(Tc ) = 3000k − 500 ≤ 3000k gas (for k ≥ 1).
+
+At the 30M block gas limit, the maximum tree size is kmax ≈ 10,000 leaves. Recommended
+operational constraint: k ≤ 20 leaves for typical strategies; k ≤ 100 for complex ones.
+14
+
+4.6
+
+Redistribution Intent and Position Commitment
+
+Definition 4.7 (Redistribution Intent).
+I = (action_type, target_addr, params_hash, keeper_fee, max_amount).
+Commitment:
+intentHash = Poseidon25 (action_type, target_addr, params_hash, keeper_fee, max_amount).
+Definition 4.8 (Position Commitment).
+position_commit = Poseidon23 (col_nominal, debt_principal, cm(N )).
+Debt semantics. debt_principal is the nominal principal committed at registration time.
+At enforcement time the registry computes accrued debt as:
+debt_accrued(tenforce ) = debt_principal × (1 + rate)(tenforce −tregister )/seconds_per_year .
+The health factor is then:
+health_factor =
+
+col_nominal × oracle_price(tenforce ) × LTV
+.
+debt_accrued(tenforce )
+
+Concrete IRM template. As a concrete template satisfying AS8, the construction’s reference
+IRM follows the Aave-V3 piecewise-linear strategy: rate(t) is determined by a contract whose
+state depends only on (i) cumulative borrow utilization committed at deployment-time parameters
+and (ii) block timestamp. Both are deterministic given block input, and rates are non-decreasing
+in time within an envelope’s lifetime by parameter choice. Other IRM patterns (Compound’s
+jump-rate model, Morpho’s fixed-rate auction model with parameter commitment) likewise
+satisfy AS8 if their parameters are committed at registration. AS8 is not satisfied by IRMs that
+read mutable governance parameters at enforcement time; envelopes that depend on such IRMs
+require either an IRM-parameter snapshot at registration or a delegated freeze of governance
+during the envelope’s lifetime.
+
+4.7
+
+Envelope Definition
+
+Definition 4.9 (Envelope).
+E = (eid, cmnote , nf encumber , condHash, intentHash, position_commit, deadline, irm_addr, status).
+
+4.8
+
+Encumbrance Circuit
+
+Public inputs (9 total:
+pi[0]–pi[8]). cmnote , nf encumber , condHash, intentHash,
+position_commit, tree_root, irm_addr_commit (pi[6]), irm_addr (pi[7]), target_addr
+(pi[8]).
+
+15
+
+Private inputs (witness). v, r, aid, pkx , pky , owner_sk, merkle_path, col_nominal,
+debt_principal.
+Circuit constraints.
+1. cm(N ) = Poseidon24 (v, r, pkx , aid)
+2. pkx = derive_pubkey_x(owner_sk)
+3. nf encumber = Poseidon23 (r, cm(N ), ENCUMBER_TAG)
+
+(from r, not sk)
+
+4. VerifyMerklePath(tree_root, cmnote , merkle_path) = 1
+5. nf spend (N ) ∈
+/Σ
+
+(on-chain only; not a circuit constraint)
+
+6. intentHash = Poseidon25 (action_type, target_addr, params_hash, keeper_fee, max_amount)
+7. position_commit = Poseidon23 (col_nominal, debt_principal, cmnote )
+8. col_nominal = v (or vencumber ≤ v with range proof)
+9. v > 0; max_amount ≤ v; keeper_fee < max_amount
+10. irm_addr_commit = Poseidon22 (irm_addr, PARAMS_TAG); irm_addr = pi[7]
+11. owner_sk ̸= 0 (no degenerate Grumpkin identity)
+12. r ̸= 0 (hiding; prevents deterministic commitments)
+13. target_addr = pi[8] (circuit-bound enforcement target)
+
+4.9
+
+Spend Circuit
+
+The Spend circuit includes an in-circuit nullifier binding constraint that prevents two substitution
+attacks against the on-chain Mactive check.
+// Standard PSLM constraints
+cm(N)
+= Poseidon2_4(v, r, pk_x, aid)
+// [private]
+pk_x
+= derive_pubkey_x(owner_sk)
+// [private]
+nf_spend = Poseidon2_3(owner_sk,cm(N),SPEND_TAG)// [public]
+VerifyMerklePath(tree_root, cm(N), merkle_path) // [public tree_root]
+// Envelope addition: nullifier binding
+nf_enc_r = Poseidon2_3(r, cm(N), ENCUMBER_TAG) // [private]
+nf_enc_r == nf_encumber_public_input
+// [equality constraint]
+// On-chain: require nf_encumber_public_input NOT in M_active
+
+The equality constraint nf_enc_recomputed = nf_encumber_public_input closes two attack
+classes:
+Phantom nullifier injection (Attack A): Prover supplies nf_encumber_public_input =
+x∈
+/ Mactive while actual nf encumber (N ) ∈ Mactive . Closed by the Merkle path binding and AS2
+(Poseidon2 preimage infeasibility).
+
+16
+
+Cross-note nullifier swap (Attack B): Prover supplies nf encumber (N ′ ) for a different note
+N′ ∈
+/ Mactive . Closed by the equality constraint requiring a Poseidon2 collision (AS2).
+
+4.10
+
+Settle Circuit
+
+Public inputs.
+
+eid, nf_encumber_public_input, tree_root, repayment_amount.
+
+Circuit constraints. (Each line below is rendered in pseudocode for readability; the underlying
+ACIR system encodes equality and range constraints natively.)
+cm(N)
+= Poseidon2_4(v, r, pk_x, aid)
+// equality
+pk_x
+= derive_pubkey_x(owner_sk)
+// ownership equality
+VerifyMerklePath(tree_root, cm(N), merkle_path)// Merkle inclusion
+nf_enc_r = Poseidon2_3(r, cm(N), ENCUMBER_TAG) // equality
+nf_enc_r == nf_encumber_public_input
+// equality constraint
+repayment_amount < 2^128
+// range constraint
+
+On-chain verification by EnvelopeRegistry.settle follows the Checks-Effects-Interactions
+(CEI) pattern:
+1. Check: Verify the SNARK proof against public inputs.
+2. Check: Confirm nf_encumber_public_input ∈ Mactive .
+3. Check: Confirm repayment_amount ≥ debt_accrued(tnow ).
+4. Effect: Add nf_encumber_public_input to Mtomb ; remove from Mactive .
+5. Interact: Release the redistribution output to the lender.
+External interaction (Step 5) occurs only after the marker-set state has been updated, so a
+re-entrant call into settle during the redistribution callback observes nf encumber ∈
+/ Mactive and
+reverts at Step 2. The same CEI ordering applies to enforce: condition evaluation and marker-set
+update precede the keeper-reward and redistribution interactions.
+Completion of Theorem 3.16 P3. The Settle circuit is the only sk-authorized exit path
+from Mactive , and it requires repayment_amount ≥ debt_accrued. The owner can only settle by
+satisfying the mechanism’s terms.
+
+4.11
+
+Formal Properties E1–E6
+
+E1 (Binding): condHash, intentHash, position_commit, deadline are immutable after registration.
+E2 (Encumbrance Integrity): If nf encumber (N ) ∈ Mactive , no valid Spend proof can pass the
+on-chain verifier for N as the spent note.
+E3 (Enforceability): If cond(S) = 1, enforce(eid, oracleData) succeeds by correctness of the
+on-chain evaluator.
+E4 (Permissionlessness): enforce is callable by any address; requires no sk authorization;
+requires no ZK proof.
+17
+
+E5 (Liveness Independence): Follows from E4.
+E6 (Bounded Settlement): Redistributed amount ≤ max_amount committed in intentHash.
+Sequential re-encumbrance. Lemma 5.2 below shows that two simultaneously active envelopes for the same note are impossible. Sequential re-encumbrance — registering a fresh
+envelope for N after a prior envelope has terminated via settle, enforce, or expire — is
+permitted by construction and is intentional: an asset is reusable as collateral once a prior
+obligation closes.
+
+4.12
+
+Expire Function
+
+The expire path becomes available once deadline has passed and the envelope has not been
+settled or enforced. It is permissionless (no sk authorization, no ZK proof) and follows the CEI
+pattern:
+1. Check: block.timestamp > deadline and nf encumber ∈ Mactive .
+2. Effect: Move nf encumber from Mactive to Mtomb .
+3. Interact: If a fallback action address is registered, call
+IEnforcementAction(fallbackAddr).execute(eid, msg.sender, params).
+
+5
+
+Security Analysis
+
+5.1
+
+Assumptions
+
+AS1 (SNARK knowledge soundness): Π is (εkS , tkS )-knowledge sound.
+(k)
+
+AS2 (Collision resistance): For each width k ∈ {2, 3, 4, 5}, Poseidon2k is (εcr , tcr )-collision
+(k)
+resistant. Write εcr := maxk εcr .
+AS3 (Discrete log): DL in G is (εdl , tdl )-hard. (Not post-quantum secure; see below.)
+AS4 (Oracle integrity): Oracle values read in a single transaction are consistent (same block).
+AS5 (UltraHonk ZK — implementation assumption): UltraHonk achieves (εZK , tZK )computational zero-knowledge, where εZK ≈ 2−100 for BN254 (λ ≈ 100) and εZK ≈ 2−128
+for BLS12-381 (λ = 128).
+AS6 (Poseidon2 Indifferentiability): For each width k used, Poseidon2k is (tind,k , εind,k )indifferentiable from a random oracle [MRH04]. Treated as a heuristic assumption as of
+March 2026.
+AS7 (EnvelopeRegistry Immutability — deployment assumption): The deployed EnvelopeRegistry contract has no admin key, upgrade proxy, or any mechanism by which any
+party can modify Mactive or Mtomb outside the four protocol-defined functions.
+AS8 (IRM Correctness): The Interest Rate Model contract returns rates that are nondecreasing over time and deterministic given block timestamp and committed parameters.
+18
+
+Post-quantum scope. AS3 is not post-quantum secure: Shor’s algorithm solves DL on elliptic
+curves in polynomial quantum time [Sho94]. All results citing AS3 (specifically Theorem 5.6 and
+Gagent_key ) do not hold against a quantum adversary.
+Result
+
+Game Assump.
+
+Scope / advantage bound
+
+Thm. 5.1 Encumbrance Security
+Lem. 5.2 Double-Encumbrance
+Prev.
+Thm. 5.3 Enforcement Safety
+Thm. 5.4 Enf. Completeness
+Prop. 5.5 Encumbrance Indistinguishability
+Thm. 5.6 Settle Circuit Security
+
+Genc
+—
+
+AS1, AS2
+AS1, AS2
+
+Spend circuit
+Single note
+
+Genf
+—
+EIG
+
+AS4
+AS4, liveness
+AS2, AS5, AS6
+
+Gsettle
+
+AS1, AS2, AS3
+
+Single transaction
+—
+εZK + 2εind + εcr + QH /|Fp |; conditional on AS5,
+AS6
+Owner-exclusive settle
+
+Table 2: Security claims, games, and dependencies (main results).
+
+5.2
+
+Encumbrance Security
+
+Theorem 5.1 (Encumbrance Security). Under AS1 and AS2:
+AdvGencumber (A, λ) ≤ min(1, n · (εkS + 2εcr )),
+where n is the number of notes enrolled in active envelopes during the game.
+Proof. Suppose A wins Gencumber by producing an accepting Spend proof Π∗ such that the
+on-chain verifier accepts, the revealed spend nullifier is nf spend (N ), and nf encumber (N ) ∈ Mactive .
+By AS1, extractor EkS (Π∗ , pp) outputs a witness w = (v, r′ , pkx , aid, sk′ , merkle_path, . . .)
+satisfying all Spend circuit constraints, except with probability εkS .
+Case (a): sk′ = skN and the extracted cm(N ) = cm(Nspent ). By AS2 (collision resistance
+of Poseidon24 ), the witness equals the true note, hence r′ = rN . The equality constraint gives
+x = Poseidon23 (rN , cm(N ), ENCUMBER_TAG) = nf encumber (N ) ∈ Mactive , contradicting the on-chain
+check x ∈
+/ Mactive .
+Case (b): A Poseidon2 collision exists (under SPEND_TAG or ENCUMBER_TAG). Each contributes
+εcr ; by union bound, 2εcr per note.
+By union bound over n notes and clipping at 1: AdvGencumber (A) ≤ min(1, n · (εkS + 2εcr )).
+Lemma 5.2 (Double-Encumbrance Prevention). The same note N cannot be registered in two
+simultaneously active envelopes.
+Proof. First registration puts nf encumber (N ) ∈ Mactive . A second registration requires nf encumber ∈
+/
+Mactive (on-chain check), so it is rejected.
+
+19
+
+5.3
+
+Enforcement Safety and Completeness
+
+Theorem 5.3 (Enforcement Safety). Under AS4, AdvGenforce_safe (A) = 0.
+Proof. The on-chain condition evaluator reads oracle values in the same transaction and evaluates
+the revealed tree. If cond(S) = 0, the evaluator returns false and the transaction reverts.
+Theorem 5.4 (Enforcement Completeness). Given liveness and AS4, if cond(S) = 1 then
+enforce(eid, oracleData) succeeds for some oracle data revealed at block with state S.
+Proof. Permissionlessness (E4) and correct on-chain evaluation (AS4).
+
+5.4
+
+Oracle Manipulation: Operational Considerations
+
+This subsection documents what AS4 does not cover (cross-transaction oracle manipulation)
+and the condition-tree mitigations available. We label this as operational considerations rather
+than a security theorem: the formal model in this paper guarantees within-transaction oracle
+consistency through AS4, but cross-transaction manipulation falls outside the model’s scope and
+is properly the domain of MEV and market-microstructure analysis. The original draft of this
+paper included an economic-cost argument inline; reviewers correctly observed that the argument
+was informal relative to the rest of the security analysis. We have therefore demoted it from a
+theorem-level claim to operational guidance, with explicit pointers to the formal MEV literature
+for readers who want a rigorous treatment.
+In-scope (formally addressed): same-transaction oracle consistency through AS4 (Theorem 5.3).
+Out-of-scope (delegated to operational discipline):
+Single-block flash-loan manipulation. An adversary takes a flash loan and moves spot price
+within one block to trigger or prevent enforcement. Mitigation: combine PriceLeaf with
+a TimeLeaf that requires block.timestamp ≥ tlast + ∆. Any ∆ > 0 defeats single-block
+manipulation.
+Sustained multi-block manipulation against TWAP oracles. Adversaries with sufficient
+capital can sustain price manipulation across a TWAP window. The cost of doing so is
+governed by AMM constant-function-market-maker dynamics [AKC+ 20] and the depth of
+liquidity within the window. The relevant analysis is the standard TWAP-attack literature
+[MNW22], which establishes parameter regimes (W window length, D market depth) under
+which manipulation is rendered unprofitable. Envelope deployers should pick W in light of
+the asset’s typical depth and the position size at risk; we do not re-derive those bounds
+here.
+Oracle contract compromise. If the oracle contract itself is compromised, the in-circuit
+binding of oracle_addr inside condHash at registration prevents the registry from accepting
+a substituted oracle; but it does not save against a compromised but correctly-addressed
+oracle. Operational mitigation: choose oracle providers with appropriate decentralization
+and audit history; choose multi-oracle conjunctions (price-leaf AND volatility-leaf from
+independent oracles) when the position size warrants.
+20
+
+Position-aware deployment guidance. A deployer should reason about two attacker objectives separately, each with a bounded profit:
+(O1) Force a liquidation that should not have fired. Attacker profit is bounded above by
+the redistribution intent’s max_amount, plus any external position the attacker holds that
+benefits from the liquidation (for example, the attacker is the keeper and earns keeper_fee,
+or the attacker holds a short position against the borrower’s asset). Call this Πforce .
+(O2) Prevent a liquidation that should have fired. Attacker profit is bounded above by
+the borrower’s avoided loss, which equals the difference between the position’s true markto-market value and the liquidation strike at the time of the prevented enforcement. Call
+this Πprevent .
+Let Cmanip (W, D, ∆) denote the cost of sustaining oracle manipulation against a TWAP
+of window W , market depth D, and tolerance ∆ for the duration required by the deployer’s
+TimeLeaf. Standard analyses [AKC+ 20, MNW22] characterize this cost in terms of liquidity
+slippage and CFMM dynamics. The deployer’s operational rule is:
+Cmanip (W, D, ∆) > max(Πforce , Πprevent ),
+i.e., choose W , ∆, and oracle source such that manipulation cost dominates both attacker
+objectives. We do not re-derive the cost-bound estimates here; the relevant parameter regimes
+for major DeFi assets are documented in the cited literature.
+Oracle implementation reachability. The binding of oracle_addr inside condHash at registration time prevents the registry from accepting a substituted oracle address. It does not,
+however, prevent the oracle implementation behind that address from changing if the oracle is
+itself a proxy contract. Deployers using proxied oracles inherit a residual upgrade-risk channel
+that is outside the construction’s threat model. Mitigation: prefer non-upgradeable oracle deployments where possible, or commit a hash of the oracle implementation bytecode in condHash
+alongside the address (a forward-compatible extension to the condition-tree leaf format).
+Scope statement. This subsection makes no theorem-level claims. The condition-tree shape
+and the binding of oracle addresses in condHash are within-model facts established by the
+construction. The cross-transaction economic analysis above and the proxy-implementation
+reachability question are the deployer’s responsibility. Failure of the operational rule does not
+invalidate the construction’s correctness theorems; it changes the empirical security level achieved
+by a specific deployment.
+
+5.5
+
+Encumbrance Indistinguishability
+
+Proposition 5.5 (Encumbrance Indistinguishability — Conditional on AS5 and AS6). Under
+AS2, AS5, and AS6:
+AdvEIG (A, λ) ≤ εZK + 2εind + εcr + QH /|Fp |.
+Proof. Via an explicit three-step hybrid argument over four games:
+Game 0 (real EIG). Game 1 (replace ZK proof with simulator SimUH , by AS5): | Pr[b′ =
+b in Game 0] − Pr[b′ = b in Game 1]| ≤ εZK .
+21
+
+Game 2 (replace Poseidon24 with random oracle RO4 , by AS6): | Pr[b′ = b in Game 1] −
+Pr[b′ = b in Game 2]| ≤ εind .
+Game 3 (replace Poseidon23 with random oracle RO3 , by AS6): | Pr[b′ = b in Game 2] −
+Pr[b′ = b in Game 3]| ≤ εind .
+In Game 3, A can distinguish b only by guessing rb (probability ≤ QH /|Fp |) or finding a
+collision (probability ≤ εcr ). Hence | Pr[b′ = b in Game 3] − 1/2| ≤ εcr + QH /|Fp |.
+By the triangle inequality: AdvEIG ≤ εZK + 2εind + εcr + QH /|Fp |.
+
+5.6
+
+Settle Circuit Security
+
+Theorem 5.6 (Settle Circuit Security). Under AS1, AS2, and AS3:
+AdvGsettle (A, λ) ≤ εkS + 2εcr + εdl .
+Proof. Four attack classes:
+Attack 1 (forge without owner_sk): By AS1 (extractor) and AS3 (DL hardness),
+probability ≤ εkS + εdl .
+Attack 2 (cross-note settle): Requires a Poseidon23 collision under ENCUMBER_TAG, probability ≤ εcr .
+Attack 3 (false repayment_amount): Blocked by the on-chain arithmetic comparison;
+deterministically fails.
+Attack 4 (cm(N ) forgery): Requires a Poseidon24 collision, probability ≤ εcr .
+By union bound: AdvGsettle ≤ εkS + εdl + 2εcr .
+
+5.7
+
+Deployment Models Satisfying AS7
+
+AS7 (registry immutability) is a deployment-time assumption rather than a cryptographic one.
+Its strength is therefore inherited from the deployment recipe rather than from a hash function
+or proof system. Because reviewers may reasonably ask what real deployments look like, we
+provide three concrete deployment templates and analyse what each guarantees.
+Template 1: Strict immutability (strongest).
+• Deploy EnvelopeRegistry.sol with no admin role, no Ownable pattern, no proxy delegate,
+no upgrade mechanism.
+• Deploy via CREATE2 with a deterministic salt and known initialization bytecode; the
+deployment transaction is publicly verifiable.
+• No selfdestruct opcode in the contract bytecode.
+• IRM_addr and oracle_addr for any registered envelope are immutable post-registration
+(already enforced by the in-circuit binding of condHash; restated here for emphasis).
+• Adverse modification of Mactive or Mtomb outside the four protocol-defined functions (create,
+settle, enforce, expire) is impossible.
+This template gives the cleanest mapping to AS7. The trade-off is no remediation path for
+protocol bugs: a discovered vulnerability requires a separate registry deployment, with existing
+envelopes either drained through normal exits or stranded.
+22
+
+Template 2: Timelock-governed parameters with immutable state-machine (intermediate). The state-machine functions and the marker sets remain immutable per Template
+1. A separate ParameterRegistry contract holds operational parameters (default IRM lookup,
+oracle whitelist, condition-tree gas budget). ParameterRegistry is governance-controlled with a
+≥ 7-day timelock and a multisig with ≥ 5-of-9 threshold.
+This template preserves the structural guarantee that no party can modify Mactive or Mtomb ,
+while permitting parameter updates that affect future envelopes only. Existing envelopes are
+bound to the parameter snapshot committed at their registration, so timelock governance does
+not retroactively weaken an active encumbrance.
+The trade-off is a slightly weaker AS7: a sophisticated adversary capable of compromising the
+timelock governance could front-run a future envelope’s registration with adversarial parameters,
+but cannot modify or release an already-registered envelope.
+Template 3: Quorum-frozen with break-glass exit (weakest acceptable). A multisig
+holds a single “emergency drain” function that, when triggered by ≥ m out of n signers within
+a one-block window, freezes new create calls and lets owners withdraw their notes through a
+special-purpose exit. The function does not modify Mactive for active envelopes; it only blocks
+new entries.
+This template is the weakest one we consider compatible with the spirit of AS7. The breakglass function does not weaken existing encumbrances, but the deployer has voluntarily assumed
+liveness risk: a malicious quorum could stop the protocol from accepting new envelopes (a denial
+of service, not a violation of NCEE). This template is appropriate for early-stage deployments
+where the cost of stranding due to discovered bugs is high; production deployments at meaningful
+TVL should use Template 1 or Template 2.
+What does not satisfy AS7.
+
+We list common failure modes explicitly:
+
+• Any Ownable pattern with a key-controlled admin who can pause or upgrade the registry’s
+state-machine functions: violates AS7 directly.
+• OpenZeppelin’s TransparentUpgradeableProxy or UUPS upgrade pattern over the registry’s main implementation: violates AS7. Upgrade introduces a path by which an updated
+implementation could mutate Mactive outside the four protocol-defined functions.
+• Any compiler / language feature that introduces delegatecall into the registry’s markerset storage layout from non-protocol code paths: violates AS7.
+• “Pause” mechanisms that can prevent enforce from being called: do not strictly violate
+AS7 but violate P4 (permissionless enforcement) of NCEE.
+Verification. For each deployment, AS7 satisfaction is publicly verifiable: read the bytecode
+at the registry address, confirm absence of admin-mediated mutation paths, and confirm the
+deployment transaction’s source bytecode matches the audited source.
+
+23
+
+6
+
+Privacy Analysis
+
+The envelope’s privacy claims are deliberately modest:
+• The main construction hides note identity and witness data to an on-chain observer who
+does not know the note randomness.
+• The main construction does not fully hide position size when position_commit is published
+without additional blinding.
+• The blinded-position variant in Appendix B adds that protection with minimal circuit
+overhead.
+• Privacy claims are about on-chain observation; they do not cover network metadata, RPC
+leakage, or mempool timing.
+Formally, the main privacy game is Encumbrance Indistinguishability (EIG), analyzed in §5.5.
+Appendix B records the operational leakage profile, including durable pseudonym linkage through
+nf encumber , condition-tree disclosure at enforcement time, and mitigations.
+
+7
+
+Application: Non-Custodial Collateralized Lending
+
+This section should be read as an application of the theorem and its witness construction, not as
+an additional source of formal claims. The envelope yields a direct non-custodial lending pattern:
+a borrower shields collateral into a note, registers an envelope committing a liquidation condition
+and redistribution intent, and receives credit once the lender verifies that the encumbrance
+marker is active.
+At liquidation time, any keeper may call enforce(eid, oracleData) when the condition tree
+evaluates to true.
+Two operational points matter:
+1. The gas-expensive operations are create and settle, which invoke proof verification, while
+the enforcement path requires no proof and remains comparatively cheap. Appendix D
+reports the corresponding measurements.
+2. Because enforce is permissionless, keeper rewards remain exposed to standard frontrunning and private-orderflow considerations. This affects liveness incentives, not the core
+safety theorem.
+Compared with custody-based protocols such as Aave, the envelope changes the trust profile
+rather than removing assumptions altogether. Custody risk is exchanged for proof-system
+soundness, oracle integrity, and registry immutability.
+
+24
+
+7.1
+
+Practical Economics: Position-Value Regimes
+
+The on-chain costs reported in Appendix D (approximately 2.8M gas for create, 2.7M gas for
+settle, and 175k–357k gas for enforce depending on tree size) are high relative to custody-based
+baselines (Aave deposit ≈ 200k gas, Uniswap V3 swap ≈ 150k gas). It is important for readers
+to understand the position-value regime over which the construction is economical, and the gas
+environments in which that regime widens.
+Break-even position size. Let Gcreate be the gas cost of create (treated as the dominant
+lifetime cost), pgas the gas price in gwei, pETH the ETH price in USD, and rcustody the implicit
+cost of custody risk that the construction eliminates (a parameter the deployer chooses based on
+counterparty exposure). The break-even position size Vbreak satisfies:
+Vbreak · rcustody = Gcreate · pgas · 10−9 · pETH .
+Concrete break-even tables. Assuming Gcreate = 2.8 × 106 gas, pETH = $2,500, and varying
+gas environments:
+Environment
+
+L1, congestion
+L1, normal
+L1, calm
+L2 (Base, Optimism)
+L2 (Arbitrum, congested)
+
+Gas price
+(gwei)
+
+create cost
+(USD)
+
+Break-even Vbreak
+at rcustody = 1%
+
+100
+25
+5
+0.05
+0.1
+
+$700
+$175
+$35
+$0.35
+$0.70
+
+$70,000
+$17,500
+$3,500
+$35
+$70
+
+Table 3: Indicative break-even position size for non-custodial encumbrance under varying gas
+environments. rcustody is the deployer’s chosen valuation of avoided custody risk; 1% is illustrative
+for a roughly one-month position.
+
+Practical takeaways.
+• On L1 mainnet, the construction is naturally suited to positions in the $10k–$1M+ range,
+where the per-position custody-avoidance value clears the gas cost.
+• On L2s, the construction is economical at consumer-scale position sizes ($50+).
+• Recursive proof aggregation (Appendix D, N = 10 aggregation) reduces the amortized
+per-operation gas cost to roughly 357,000, bringing L1 break-even down to roughly $2,500–
+$5,000 at typical gas prices.
+• Different IRM and condition-tree shapes shift these numbers: a small condition tree (k = 5
+leaves) keeps enforce costs near 175k gas, while a complex tree (k = 50) drives enforcement
+gas up linearly.
+The construction is not appropriate for positions whose value is small relative to the perposition deployment cost. It is well-suited to L2 deployments and to L1 deployments at meaningful
+position size — which is to say, to the regime where non-custodial enforcement is most needed in
+any case.
+25
+
+8
+
+Related Work
+
+This section was substantially expanded in the present revision. The original draft summarized
+adjacent work in two paragraphs; reviewers correctly noted that several closely related systems
+(Hawk, Penumbra, Railgun, Zcash, ERC-7710/7715, Anoma) deserve specific differentiation. We
+organize the comparison around what each system provides and what it does not provide for the
+NCEE question studied here.
+
+8.1
+
+Private Smart Contracts (Hawk)
+
+Hawk [KMS+ 16] introduces privacy-preserving smart contracts via a privileged “manager” party
+who learns participant inputs in clear, computes the contract output, and posts a zero-knowledge
+proof of correct execution. From an NCEE standpoint, Hawk solves a related but distinct
+problem: it provides confidentiality and delegated execution under a trusted-manager assumption.
+The manager is by construction a privileged co-signer, which means Hawk does not satisfy
+NCEE-P1 (self-custody, no required co-signer). The trust decomposition of Hawk is not the trust
+decomposition we study; the contributions are complementary rather than overlapping.
+
+8.2
+
+Private Record and Note Systems (Zexe, Veri-Zexe, Zcash, Penumbra,
+Railgun, Tornado-style pools)
+
+These are the closest architectural relatives of the envelope. They provide commitments, nullifiers,
+and rich private-state transitions [BCG+ 20, B+ 22, HBHW24, Pen24, Rai21, Tor19]. What they
+share with us is the commitment-based ledger model (analogous to our extended PSLM) and the
+notion of a nullifier marking spent state.
+What they do not provide is owner-independent enforcement against an active restriction
+state. In Zcash, Penumbra, and Railgun, a note’s spendability is determined by the holder’s
+nullifier secret alone. There is no protocol-maintained state (analogous to our Mactive ) against
+which spend validity is checked. The owner can always spend, given the nullifier secret; what
+the system protects is the value, recipient, and history of those spends. That is privacy, not
+encumbrance.
+Zexe and Veri-Zexe support general-purpose zero-knowledge state transitions and could
+in principle be parametrised to encode the envelope’s marker-set checks. The contribution
+of this paper relative to Zexe-style frameworks is twofold: first, the structural impossibility
+theorem under KS, which Zexe’s setting does not address; and second, the explicit nullifier
+separation (encumbrance nullifier from r, not sk), which is novel as far as we know. A Zexe-based
+reimplementation of the envelope is plausible and would be a useful follow-up.
+Penumbra deserves a separate note: it includes delegated execution and shielded staking,
+which share architectural genes with parts of the envelope construction. Penumbra’s staking
+does not, however, model owner-independent enforcement of an external condition; the economic
+logic is internal to the protocol, not parameterised by an external condition tree.
+
+26
+
+8.3
+
+Bitcoin Covenant-Style Restrictions (MAST, CTV)
+
+MAST [Max13] and CTV-class proposals constrain future transaction structure in a UTXO
+setting. They target a different execution model (UTXO with covenant rules) and a different
+question (what spends are admissible given covenant predicates). They achieve a partial form
+of transition restriction — we acknowledge this — but do not aim at the full NCEE shape, in
+particular at permissionless enforcement of an external condition with a redistribution target.
+Where Bitcoin covenants restrict shape, the envelope restricts shape and outcome together.
+
+8.4
+
+Account-Abstraction and Delegation Frameworks (ERC-4337, ERC-7710,
+ERC-7715, EIP-7702)
+
+ERC-4337 [Eth21] introduces wallet-as-contract with custom validation logic. ERC-7710 [Eth24c]
+standardizes smart-contract delegation interfaces. ERC-7715 [Eth24d] extends this with a general
+framework for granting wallet permissions. EIP-7702 [Eth24a] lets EOAs temporarily install
+delegate code.
+These improve execution control but, as we showed in Corollaries 3.8, 3.10, and 3.13, do not
+remove the KS-side structural obstacle for standard account-held asset paths. That is the central
+distinction: the standards listed here regulate authorization decisions, whereas the envelope
+changes the authorization-coupled state. The two are complementary — one expects mature
+deployments to compose ERC-4337 wallets that interface with envelope-encumbered notes — but
+they operate at different layers.
+
+8.5
+
+Keeper and Automation Networks (Chainlink Automation, Gelato,
+Keep3r)
+
+These networks provide liveness infrastructure for triggered actions: a keeper monitors conditions
+and submits transactions when triggers fire. They are crucial for the envelope’s enforcement
+liveness in practice. They do not, however, provide cryptographic asset guarantees of the kind
+we study; an automation network with malicious keepers would cause liveness failures, not safety
+failures, against an envelope’s NCEE properties. The decomposition we propose is exactly that:
+keepers provide liveness, the envelope construction provides safety.
+
+8.6
+
+Intent and Solver Frameworks (ERC-7683, CoW Protocol, Anoma)
+
+ERC-7683 [Eth24b] standardizes a cross-chain intent format for solver networks. CoW Protocol
+[CoW22] coordinates batch auction-based execution across DEX liquidity. Anoma [BM+ 22]
+provides a more general intent-and-solver architecture with private state.
+These coordinate execution and routing but are not themselves encumbrance mechanisms
+for standard account-based assets. An intent solver that promises to liquidate collateral when a
+condition fires can do so only if the underlying asset can be moved without the owner’s per-action
+consent — which is exactly the question this paper studies. Intent frameworks therefore stand
+to benefit from envelope-style primitives at the asset-encumbrance layer; our construction can
+be read as the missing primitive that lets intent-and-solver architectures handle non-custodial
+collateral safely.
+Anoma’s resource-machine model is the closest in spirit to our PSLM extension. A Anomanative instantiation of the envelope is conceivable and would be an interesting follow-up.
+
+27
+
+8.7
+
+Comparative Claim
+
+The comparative claim is correspondingly narrow: to our knowledge, prior work does not jointly
+provide both an explicit structural impossibility theorem under a KS-style axiom and a matching
+commitment-based witness construction realizing all four NCEE properties within one formal
+framework. Each of the systems above provides part of the picture — privacy, delegation, intent
+coordination, or covenant-style restrictions — and the envelope composes naturally with several
+of them. The paper’s contribution is the structural separation and the witnessing construction,
+not displacement of any of those systems.
+
+9
+
+Limitations
+
+We list explicit limitations of the construction and of the analysis.
+Model scope. The KS / AAC dichotomy is stated for transfer-dichotomous asset classes.
+The model does not classify hybrid asset systems whose spend paths neither cleanly preserve
+a unilateral owner-authorized weakening nor cleanly couple to mechanism state. Such hybrids
+exist in practice (for example, multi-sig wallets with timelocked recovery paths), and extending
+the model to them is left as future work.
+Deployment-assumption strength. AS7 is a deployment assumption, not a cryptographic
+one. Strict immutability (Template 1, §5.7) maps cleanly onto AS7; intermediate templates
+require operational discipline. The witness construction’s NCEE guarantees inherit the strength
+of the chosen deployment template.
+Cross-transaction oracle manipulation is out of model scope. AS4 covers withintransaction oracle consistency. Cross-transaction manipulation is delegated to operational
+discipline (§5.4), with explicit pointers to the formal MEV literature. The construction’s safety
+theorems are conditional on appropriate choice of oracle, TWAP window, and condition-tree
+structure for the position size at risk.
+Practical-economics regime. The construction is uneconomical for very small positions on
+expensive L1s (Table 3). It is well-suited to L2 deployments and to mid-to-large L1 positions.
+Recursive aggregation widens the regime but does not eliminate the per-position cost floor.
+Privacy is partial. The blinded-position variant (§B) hides position size against on-chain
+observers; the durable-pseudonym linkage through nf encumber remains and is the dominant residual
+leakage. Network-layer privacy (mempool, RPC, peer-to-peer metadata) is out of scope.
+Post-quantum scope. The construction’s signature-related security (Theorem 5.6, Gagent_key )
+depends on AS3 (DL hardness), which falls to Shor’s algorithm. A post-quantum variant would
+substitute a PQ-secure signature scheme for ECDSA; the rest of the construction (Poseidon2,
+ZK proofs over BN254/BLS12-381) inherits whatever PQ properties the underlying primitives
+provide.
+
+28
+
+Heuristic indifferentiability. AS6 (Poseidon2 indifferentiability) is treated as a heuristic
+assumption as of the time of writing. Results citing AS6 (Proposition 5.5, Proposition 4.5) are
+conditional on it.
+Implementation. The reference implementation is complete on BN254 and partially prepared
+for BLS12-381 (Appendix E). Production deployment at λ = 128 requires the BLS12-381 work
+to land. The construction’s theorem-level results are independent of that migration.
+
+10
+
+Conclusion
+
+The paper’s main claim is structural. Within the asset setting studied here, the decisive question
+is whether the spend path remains under unilateral owner control or is cryptographically coupled
+to mechanism state. The impossibility theorem under KS and the envelope construction on the
+AAC side are the two sides of that claim.
+The barrier is KS: if an ordinary spend path remains directly available to the owner key, then
+non-custodial irrevocable encumbrance is impossible in the sense formalized here. The witness
+is the envelope in the extended PSLM: once valid spending is coupled to protocol-maintained
+restriction state, the four NCEE properties become jointly realizable under explicit assumptions.
+The levels of claim matter. The structural impossibility and necessity results are theoremlevel statements in the ledger model. The achievability theorem is conditional on an explicit
+deployment assumption about registry immutability. Some concrete security bounds rely only
+on standard cryptographic assumptions; others additionally rely on heuristic or implementation
+assumptions for Poseidon2 or UltraHonk. The empirical sections report implementation behavior
+and practical-economics regimes, not theorem-level guarantees.
+Future work includes stronger implementation verification, removal of heuristic assumptions
+where possible, BLS12-381 production support, more mature keeper-economics analysis, MEVaware deployment strategies, and extensions of the KS / AAC dichotomy to hybrid and multi-key
+asset systems. The central separation does not depend on those extensions.
+Reference implementation. A reference implementation in Noir/UltraHonk supports the
+empirical claims in Appendix D. The protocol design and theorem-level results are independent
+of any specific implementation; details of the implementation artifact are available from the
+author on request.
+
+References
+[AKC+ 20] Guillermo Angeris, Hsien-Tang Kao, Rex Chiang, Charlie Noyes, and Tarun Chitra.
+An analysis of Uniswap markets. Cryptoeconomic Systems, 2020.
+[B+ 22] Sean Bowe et al. Veri-Zexe: Decentralized private computation with universal setup,
+2022.
+[BCG+ 20] Sean Bowe, Alessandro Chiesa, Matthew Green, Ian Miers, Pratyush Mishra, and
+Howard Wu. Zexe: Enabling decentralized private computation. In IEEE S&P, 2020.
+[BM+ 22] Adrian Brink, Maciej Mazur, et al. Anoma protocol specification. Technical Report,
+Heliax. https://anoma.net/papers/, 2022.
+29
+
+[CoW22] CoW Protocol. CoW protocol: A meta DEX aggregator. https://cow.fi, 2022.
+[Eth20] Ethereum. EIP-2537: Precompile for BLS12-381 curve operations. Ethereum Improvement Proposal, 2020.
+[Eth21] Ethereum. ERC-4337: Account abstraction using alt mempool. ERC Standard, 2021.
+[Eth24a] Ethereum. EIP-7702: Set EOA account code. Ethereum Improvement Proposal, 2024.
+[Eth24b] Ethereum. ERC-7683: Cross-chain intent standard. ERC Standard, 2024.
+[Eth24c] Ethereum. ERC-7710: Smart contract delegation interfaces. ERC Standard, 2024.
+[Eth24d] Ethereum. ERC-7715: Grant permissions from wallets. ERC Standard, 2024.
+[HBHW24] Daira Hopwood, Sean Bowe, Taylor Hornby, and Nathan Wilcox. Zcash protocol
+specification. Electric Coin Company, 2024.
+[KMS+ 16] Ahmed Kosba, Andrew Miller, Elaine Shi, Zikai Wen, and Charalampos Papamanthou.
+Hawk: The blockchain model of cryptography and privacy-preserving smart contracts. In
+IEEE S&P, 2016.
+[Max13] Gregory Maxwell. Merklized abstract syntax trees. Bitcoin Technical Discussion, 2013.
+[MNW22] Tobias Mackinga, Tejaswi Nadahalli, and Roger Wattenhofer. TWAP oracle attacks:
+Easier done than said? In IEEE ICBC, 2022.
+[MRH04] Ueli Maurer, Renato Renner, and Clemens Holenstein. Indifferentiability, impossibility
+results on reductions, and applications to the random oracle methodology. In TCC, 2004.
+[Pen24] Penumbra. Private staking and DeFi on Cosmos. https://penumbra.zone, 2024.
+[Rai21] Railgun. Private DeFi on Ethereum. https://railgun.org, 2021.
+[Sho94] Peter W. Shor. Algorithms for quantum computation: Discrete logarithms and factoring.
+In FOCS, 1994.
+[Tor19] Tornado Cash. Non-custodial Ethereum mixer. https://tornado.cash, 2019.
+
+A
+
+Complete Security Game Definitions
+
+A.1
+
+Gencumber
+
+Setup. C deploys EnvelopeRegistry with the Spend circuit verifier. Oracle queries. A
+may: (1) Create(N, E) — C verifies proof and updates state; (2) Enforce(eid, data); (3)
+SpendAttempt(N, π). Win. SpendAttempt succeeds for N with nf encumber (N ) ∈ Mactive .
+
+30
+
+A.2
+
+EIG (Encumbrance Indistinguishability Game)
+
+Initialization. C generates (pp, state0 ). A given pp. Observation phase. A makes arbitrary
+$
+
+envelope operations. Challenge. A specifies (v, pk, aid). C samples r0 , r1 ←
+− Fp , forms N0 =
+(v, r0 , pk, aid), N1 = (v, r1 , pk, aid), flips b ← {0, 1}, registers envelope for Nb . A receives
+cm(N0 ), cm(N1 ) but not r0 or r1 . Win. A outputs b′ = b. AdvEIG (A, λ) = | Pr[b′ = b] − 1/2|.
+
+A.3
+
+Gfwdback
+
+Defined in full in §4.4. Key feature: A is given owner_sk. Advantage bounded by εcr + QH /|Fp |.
+
+A.4
+
+Gagent_key
+
+A has full agent_sk but not owner_sk. Win: redirecting more than max_amount or to nontarget addresses. Advantage: AdvGagent_key (A, λ) = Pr[A wins] ≤ εkS + εcr , conditional on
+agent_sk ⊥ owner_sk.
+
+A.5
+
+Gsettle
+
+Setup. C deploys EnvelopeRegistry with Settle circuit verifier. C generates a keypair
+(skowner , pkowner ), note N = (v, r, pkowner , aid), and registers an envelope with nf encumber (N ) ∈
+Mactive . A is not given owner_sk or r.
+Win conditions.
+W1: A settle accepted with a proof not derived from owner_sk.
+W2: A settle accepted with repayment_amount < debt_accrued.
+W3: nf encumber (N ) removed from Mactive by any means other than a properly authorized exit.
+Bound. By Theorem 5.6: AdvGsettle (A, λ) ≤ εkS + 2εcr + εdl under AS1, AS2, AS3.
+
+B
+
+Extended Privacy Analysis
+
+B.1
+
+Durable Pseudonym Lifecycle
+
+nf encumber appears at registration and again when consumed, so an observer who already linked
+the underlying note commitment may obtain a two-event pseudonym. Delayed encumbrance and
+post-settlement reshielding reduce this linkage.
+
+B.2
+
+Enforcement Disclosure
+
+At enforcement time the condition-tree preimage is revealed. This is a deliberate design choice:
+the system hides conditions during the position lifetime and reveals them only when enforcement
+becomes necessary.
+
+31
+
+B.3
+
+Blinded Position Commitment Variant
+
+To hide position size, replace
+position_commit = Poseidon23 (col_nominal, debt_principal, cmnote )
+with
+position_commitblind = Poseidon24 (col_nominal, debt_principal, cmnote , col_rand),
+$
+
+where col_rand ←
+− Fp is fresh witness randomness. Under AS6 this hides the committed values
+while preserving the same enforcement semantics.
+
+C
+
+Threshold Keeper Protocol
+
+A threshold keeper committee can be layered on top of the base construction to reduce public
+exposure of the condition-tree preimage before enforcement. The owner encrypts the tree to a
+threshold public key at registration time; when conditions approach, a quorum can decrypt for
+the keeper without making the tree broadly public in advance. This improves operational privacy
+but introduces standard threshold trust and liveness assumptions, and is therefore treated as an
+optional extension rather than part of the core NCEE theorem.
+
+D
+
+Performance Benchmarks and Proof Aggregation
+
+Key empirical points:
+• Single-proof verification for create and settle is expensive relative to custody-based
+baselines.
+• The enforce path is comparatively cheap because it requires no ZK proof.
+• Recursive aggregation materially lowers the amortized per-operation gas cost.
+Aggregation soundness assumption. Recursive proof aggregation introduces an additional
+knowledge-soundness assumption on the recursion verifier: a valid aggregated proof must imply
+that the individual aggregated proofs were themselves valid. The reference implementation
+aggregates UltraHonk proofs using the standard Honk recursion gadget; the soundness of
+aggregation in this setting reduces to the soundness of the underlying proof system (AS1) plus the
+in-circuit correctness of the recursion gadget. We treat this as inherited from the proof system
+rather than an independent assumption, but note explicitly that gas savings from aggregation
+come with a small additional surface area for proof-system implementation bugs.
+
+32
+
+Operation
+
+Cost / metric
+
+create (single proof)
+settle (single proof)
+enforce (small condition tree)
+enforce (larger condition tree)
+Aggregated verification, N = 10
+
+≈ 2.8M gas
+≈ 2.7M gas
+≈ 175k gas
+Scales linearly in leaf count
+≈ 357k gas amortized per op
+
+Table 4: Representative BN254 measurements from the reference implementation. These results
+are empirical and environment-dependent; they are reported to show feasibility, not as theoremlevel guarantees.
+
+E
+
+BLS12-381 Partial Implementation
+
+The current artifact is complete on BN254 and partially prepared for BLS12-381. The production
+motivation for BLS12-381 is the stronger target security level (λ = 128) and the availability of
+EIP-2537 support on post-Pectra Ethereum [Eth20]. The remaining work is implementation work
+in the proving backend rather than a change to the protocol design: curve support, matching
+Poseidon2 parameters, and the corresponding SRS and verifier plumbing. All theorem statements
+in the main text are independent of that migration except where concrete security levels or
+implementation measurements are explicitly discussed.
+
+33
+
+

@@ -1,0 +1,2004 @@
+EIP-7702 Phishing Attack
+Minfeng Qi1 , Qin Wang2 , Ruiqiang Li3 , Tianqing Zhu1 , Shiping Chen2
+1 City University of Macau | 2 CSIRO Data61 | 3 University of Wollongong
+
+arXiv:2512.12174v1 [cs.CR] 13 Dec 2025
+
+ABSTRACT
+EIP-7702 introduces a delegation-based authorization mechanism that allows an externally owned account (EOA) to authenticate a single authorization tuple, after which all subsequent calls are
+routed to arbitrary delegate code. We show that this design enables
+a qualitatively new class of phishing attacks: instead of deceiving
+users into signing individual transactions, an attacker can induce a
+victim to sign a single authorization tuple that grants unconditional
+and persistent execution control over the account.
+Through controlled experiments, we identify three reliable trigger pathways: user-driven, attacker-driven, and protocol-triggered.
+Each can lead to full account takeover and complete asset drainage.
+We further propose two extended attack surfaces. First, ERC-4337’s
+EntryPoint pipeline enables remote and repeated activation of the
+delegated code without further victim involvement. Second, the
+chain-agnostic authorization mode permits replay-like compromises across independent networks.
+We also present the first empirical measurement of EIP-7702
+usage across major EVM chains. Analyzing over 150k authorization
+and execution events involving 26k addresses and hundreds of delegator contracts, we assess the protocol’s real-world footprint. Our
+findings show that EIP-7702 authorizations are highly centralized,
+dominated by a small number of contract families linked to criminal
+activity and repeatedly reused across incidents. Corresponding loss
+data reveals substantial theft of ETH, ERC-20 tokens, and NFTs.
+These results provide practical evidence that the attack surface we
+identify is not merely theoretical, but is already being exploited at
+scale. We conclude by proposing protocol-level defenses to mitigate
+the delegation-based phishing vector introduced by EIP-7702.
+
+KEYWORDS
+Ethereum, EIP, Phishing Attack, Account Abstraction
+
+1
+
+INTRODUCTION
+
+Phishing remains one of the most persistent and damaging attack vectors in the cryptocurrency ecosystem. As users increasingly
+rely on smart-contract wallets, NFT marketplaces, DeFi routers,
+and cross-chain bridges, adversaries have shifted from traditional
+credential theft toward transaction-centric and semantics-aware
+attacks [1, 2]. Recent studies (summarized in Table 1) show that
+modern blockchain phishing leverages UI-level deception through
+fake DApps and wallet-connect prompts [3, 4], malicious calldata
+and misleading payloads embedded in legitimate protocols [5–8],
+and fallback or proxy redirection via adversarial contracts [9, 10].
+Even DeFi routers and MEV bots have become targets of transactionlevel manipulation [5, 11, 12]. Yet Ethereum’s dominant account
+model remains the externally owned account (EOA)1 , whose validation logic is hard-wired and cannot enforce fine-grained execution
+1 EOA is a type of Ethereum account controlled by a private key, which enables its
+
+holder to send transactions, hold tokens, and interact with smart contracts [13].
+
+Figure 1: EIP-7702 Transaction Count and Growth Trend.
+
+policies. This mismatch between evolving phishing techniques and
+the static semantics of EOAs creates a structural security gap.
+Account Abstraction (AA) was introduced to mitigate this gap by
+enabling programmable validation and flexible security rules [14].
+Although ERC-4337 [15] offers AA without protocol changes, EOAs
+continue to dominate the ecosystem, leading to interim mechanisms
+that attempt to extend EOA capabilities. EIP-7702 is one such mechanism and has seen rapid adoption,with 2–3 million delegations per
+day observed on major EVM chains (Fig. 1). Instead of converting
+an EOA into a contract, EIP-7702 introduces a lightweight delegation pathway: a user signs an authorization tuple that temporarily
+overwrites the account’s code field with a delegating stub, after
+which all calls to the EOA are routed into a delegate contract.
+The missing link. Despite its rapid uptake, the security consequences of EIP-7702 remain unexplored. Prior phishing research
+focuses on transaction-level deception, such as payload manipulation, approval hijacking, or malicious routers [7–9, 23], which all
+require users to authorize harmful transactions. In contrast, EIP7702 enables a qualitatively different primitive: once a victim signs
+a single authorization tuple, every subsequent invocation of their
+account, regardless of origin, executes attacker-supplied bytecode.
+No prior work analyzes this semantic shift, determines whether
+it enables full-account compromise, or maps the conditions under
+which such compromise can be reliably triggered.
+An empirical study. Before establishing whether this mechanism
+is exploitable, it is essential to understand how EIP-7702 is being used in the wild: who controls the delegator contracts, how
+widely delegation is deployed, and whether observed endpoints
+already exhibit malicious patterns. To answer these questions, we
+conduct the first empirical measurement of 7702 authorization activity, covering over 150k authorization and execution events across
+26k+ addresses and hundreds of delegator contracts (Appendix B).
+Our results reveal burst-driven growth, extreme centralization, and
+heavy reuse of delegator contracts linked to known crime clusters,
+together with substantial real-world losses across ETH, ERC-20 tokens, and NFTs. These findings confirm that the delegation pathway
+
+Table 1: Phishing-related Attacks. Phishing attacks in blockchain ecosystems span user deception, transaction-level payload manipulation,
+contract-level semantic abuse, and vertical-specific traps (NFT, DeFi, MEV). Phishing attacks manipulate user intent and signature flows, often
+combining UI deception, malicious calldata, proxy misuse, or approval hijacking to seize digital assets (details are discussioned in §8).
+Aspect
+
+Target
+
+Objective
+
+Key Exploit
+
+Mechanism
+
+Platform
+
+Fake DApp / Website [3, 4]
+Airdrop / Giveaway Scam [16–18]
+Impersonation Scam [19]
+
+User
+User
+User
+
+Malicious signature
+Credential theft
+Asset theft
+
+UI spoofing
+Social engineering
+Identity abuse
+
+Fake interfaces, wallet-connect traps
+Reward bait, phishing links
+Fake admin/mod communication
+
+All
+EVM-compatible
+All
+
+Payload-based Phishing [20, 21]
+Approval Phishing [5, 6]
+Simulation Deception [22]
+
+Tx calldata
+Token approvals
+Tx preview
+
+Token drain
+Unlimited asset control
+Mask harmful effects
+
+Malicious payload
+Infinite approval
+Simulation mismatch
+
+Crafted calldata misleading UI/signing
+Deceptive approval request
+Misleading view-call / gas griefing
+
+EVM-compatible
+EVM-compatible
+EVM-compatible
+
+Fake Mint / Claim Contracts [9]
+Proxy-based Phishing [23]
+Permit-based Phishing [7, 8]
+
+NFT/tokens
+Upgradeable contracts
+Typed signatures
+
+NFT theft
+Contract takeover
+Replay / infinite allowance
+
+Callback/fallback trap
+Proxy fallback abuse
+Signature abstraction
+
+Malicious mint/claim UX
+Unauthorized logic override
+Trick user to sign typed-data
+
+NFT / EVM
+EVM-compatible
+EVM-compatible
+
+NFT Approval Scam [9, 10]
+DeFi Router Phishing [5, 11]
+MEV-bait Phishing [12]
+
+NFT approvals
+Swap/LP ops
+MEV bots
+
+NFT seizure
+LP/token drain
+Bot fund drain
+
+setApprovalForAll misuse
+Router impersonation
+False arbitrage signal
+
+Fake marketplace / cancel listing trap
+Fake swap/LP add/remove sequences
+Malicious callback draining MEV bot
+
+NFT
+DeFi
+EVM-compatible
+
+EIP-7702 Phishing (Ours)
+
+Authorization layer
+
+Execution hijack
+
+Delegated-auth abuse
+
+Malicious delegate installation via phished tuple
+
+Ethereum (EIP-7702)
+
+is already being used at scale and that many real-world delegator
+endpoints function as malicious infrastructure.
+
+external logic to the account. This design provides a protocol-level
+pathway for EOAs to opt into enhanced programmability.
+
+This work. Building on these observations, we present the first
+in-depth security analysis of EIP-7702 as a phishing vector. We
+show that a single malicious authorization tuple converts an EOA
+into a persistent proxy whose execution unconditionally resolves
+to attacker-controlled logic. Through controlled experiments, we
+demonstrate that full-account compromise can be triggered under
+three independent conditions: (i) benign user-driven transactions,
+(ii) attacker-driven external calls, and (iii) ambient protocol callbacks. We further show that modern execution pipelines amplify
+these risks: ERC-4337 enables remote, repeatable activation through
+the EntryPoint during validation or execution, while chain-agnostic
+authorization (chainId = 0) enables replay-like compromise across
+independent networks.
+
+Delegation through code substitution. The core idea of EIP7702 is that an EOA may install a delegation marker (0xef0100 ||
+address)2 in its code field that redirects execution to a target contract. Once the delegation is installed, any call to the EOA, whether
+originating from a user transaction or from another contract, executes the target code in the EOA’s context. This preserves the
+account’s storage, balance, and identity while enabling behaviour
+specified entirely by the delegated implementation. Importantly,
+the delegation does not modify code-introspection semantics: operations such as EXTCODESIZE and EXTCODEHASH continue to reflect
+the EOA’s own code field rather than the delegated implementation.
+Persistent and reversible behaviour upgrades. A distinguishing
+feature of EIP-7702 is its choice to make delegation persistent across
+transactions until explicitly revoked. Instead of restricting delegation to the lifetime of a single transaction, the proposal applies
+the change directly to the account’s code slot, ensuring that the
+EOA continues to behave as a smart wallet in subsequent interactions. This persistence offers a lightweight upgrade path: users can
+transition from an EOA to a programmable wallet implementation
+without deploying a contract, and can revert to a pure EOA state
+by authorizing a delegation to the zero address.
+
+Contributions. This work makes the following contributions:
+• We present the first data-driven analysis of 7702 delegations,
+revealing a highly centralized, crime-dominated ecosystem
+underlying real-world adoption.
+• We show that a single malicious authorization tuple enables
+total execution hijack of a victim EOA and validate three
+trigger conditions through end-to-end experiments.
+• We uncover dangerous composability with ERC-4337 and
+show that chain-agnostic signatures enable replay-like compromise across independent networks.
+• We propose protocol-level and ecosystem-level defenses to
+constrain the delegation-based phishing attack surface.
+
+2.2
+
+Account Abstraction
+
+The pursuit of Account Abstraction [26] aims to migrate users
+from EOAs to programmable smart contract accounts. EIP-4337 [15]
+introduced a separate transaction flow (UserOps) and infrastructure (Bundlers) to achieve this, but it faces adoption challenges
+as most users remain on EOAs. EIP-3074 [27] attempted to bridge
+this by introducing opcodes (AUTH/AUTHCALL) allowing EOAs to
+delegate control to invoker contracts temporarily. However, this approach created a parallel ecosystem incompatible with the EIP-4337
+architecture and required a hard fork for new opcodes.
+
+2 TECHNICAL WARMUPS
+2.1 EIP-7702
+Typed transactions for code delegation. EIP-7702 [24] introduces a new EIP-2718 transaction type [25] that allows an EOA to
+adopt contract-like behaviour without altering its address or deploying a new contract. The mechanism extends the typed-transaction
+framework with a dedicated set code transaction (0x04) that embeds
+an authorization list containing a set of signed delegation intents.
+When such a transaction is processed, the client interprets these
+intents as explicit instructions from the EOA’s owner to attach
+
+2 The three-byte prefix 0xef0100 serves as a marker indicating that the account code is
+
+not standard EVM bytecode but a delegation pointer. The first byte 0xef corresponds
+to a deliberately banned opcode (per EIP-3541) to prevent accidental execution, while
+the following two bytes (0x0100) identify the format version and distinguish EIP-7702
+delegations from other special code types.
+2
+
+The EIP-7702 solution. EIP-7702 aims to unify these approaches.
+Instead of introducing new opcodes or forcing a permanent migration (like EIP-5003), EIP-7702 introduces a new transaction type
+accepting a contract_code field and a signature. During transaction execution, the EOA’s code is temporarily set to the provided
+smart contract logic (enabling it to act as a contract wallet).
+This design offers advantages as follows.
+• Compatibility. It allows EOAs to reuse existing EIP-4337 wallet
+implementations directly.
+• Security. Unlike permanent migration, the code assignment is
+transient per transaction, reducing the risk of accidental permanent loss of control, while maintaining the ability for future
+permanent upgrades if desired.
+• No new opcodes. It leverages existing verify and execute logic
+rather than adding opcode changes to the consensus layer.
+
+calls or deceptive UI flows in existing dApps; instead, it leverages
+the fact that delegation is encoded in a compact pointer that reveals
+nothing about the behaviour of the underlying implementation.
+This disconnect between what the user sees (a short list of numerical
+fields) and what the protocol interprets (a persistent behaviour
+change at the account level) creates a fundamentally different form
+of phishing in which a single signed tuple can redefine how an
+account executes future transactions.
+The resulting attack surface consists of multiple variants that
+depend on how the unauthorized delegation is installed and subsequently activated, which we outline in §4.1.
+
+3 FORMALISING OUR ATTACKS
+3.1 Basics
+Set-code transaction. We model a set-code transaction as an RLP3 encoded tuple consistent with EIP-7702. For brevity, let
+
+Table 2: Comparison Among EIP-3074, EIP-4337, and EIP-7702
+
+Tset = RLP([tx_fields, auth_list, sig]),
+Property
+
+EIP-3074
+
+EIP-4337
+
+EIP-7702
+
+Execution Model
+Transaction Type
+EOA Compatible
+Delegation Type
+State Change
+Consensus Change
+Security Concern
+
+AUTHCALL
+Legacy + Opcode
+Yes
+One-shot
+None
+Minor (Opcode)
+Misuse of Call
+
+Contract Wallet
+UserOp (0x2)
+No
+Full Control
+Deploy Wallet
+None
+Bundler Trust
+
+Delegated Code
+Typed Tx (0x04)
+Yes
+Persistent
+Modify Code
+Minor (Logic)
+Phishing Risk
+
+2.3
+
+where tx_fields denotes the standard EIP-4844/EIP-1559 [31] fields
+(chain_id, nonce, gas parameters, destination, value, data, access_list,
+. . . ), auth_list is the authorization list, and sig = (𝑦par, 𝑟, 𝑠) is the
+secp256k1 signature over the serialized payload. The authorization
+list is itself a vector of tuples:
+
+
+
+auth_list = 𝑎 1, 𝑎 2, . . . , 𝑎𝑘 , 𝑎𝑖 = cid𝑖 , addr 𝑖 , 𝜈𝑖 , 𝑦𝑖 , 𝑟𝑖 , 𝑠𝑖 .
+Authorization tuple semantics. Each authorization tuple captures a signed statement in which the user endorses a specific
+delegation target under well-defined protocol conditions. The fields
+appearing in the tuple reflect these commitments: the cid value
+specifies the chain on which the authorization is intended to apply,
+the addr field encodes the address of the delegated implementation,
+and the v field represents the expected nonce of the authorizing
+account at the moment the client processes the tuple. These three
+components form the message to be signed, denoted as
+
+Phishing Attack
+
+Phishing attack. Phishing attacks in blockchain systems typically exploit a user’s misunderstanding of what they are authorizing, rather than any flaw in the underlying cryptographic mechanisms [20]. An adversary presents the victim with a transaction
+or signature request that appears benign but implicitly grants the
+attacker the ability to transfer assets or manipulate approvals. On
+Ethereum, this often takes the form of signing messages that encode ERC-20 approvals or permit-style authorizations, where the
+attacker abuses the legitimate semantics of the target contract. Because the victim intentionally produces a valid signature, these
+attacks bypass traditional security assumptions and produce onchain transactions that appear indistinguishable from honest user
+activity. The reliability of phishing as an attack vector stems from
+two properties [28, 29]: users cannot easily interpret the low-level
+effects of the operations they authorize, and wallets have limited
+ability to surface the full semantic meaning of signatures before
+they are submitted on chain.
+Phishing with 7702 (sketch). EIP-7702 introduces a richer surface
+for phishing because delegation instructions are expressed as signed
+authorization tuples whose effects are not visible in the transaction
+fields that users typically examine. A malicious party can craft
+an authorization request that appears structurally harmless yet
+installs delegated code that carries arbitrary wallet logic. Once
+processed, the victim’s EOA behaves according to the attackercontrolled implementation, enabling downstream calls to drain
+assets or forward approvals without requiring further signatures
+from the victim. The attack does not rely on misleading contract
+
+msg(𝑐𝑖𝑑, 𝑎𝑑𝑑𝑟, 𝜈) = H (MAGIC ∥ RLP([𝑐𝑖𝑑, 𝑎𝑑𝑑𝑟, 𝜈])),
+where the prefixed MAGIC byte distinguishes EIP-7702 authorizations from other signature domains. The signature components
+(𝑦, 𝑟, 𝑠) provide the parity bit and ECDSA signature values required
+for key recovery. The client thus derives the signer’s address via
+auth = ecrecover(msg, 𝑦, 𝑟, 𝑠).
+A tuple is considered valid if its chain identifier matches the
+executing environment, if its nonce aligns with the current nonce
+of the recovered authority, and if the signature satisfies standard
+ECDSA canonicality checks. These conditions ensure that the tuple
+reflects a fresh, chain-specific authorization produced by the holder
+of the corresponding private key, and that it cannot be replayed
+across nonces or forged through malleable signatures.
+When valid, processing 𝑎 causes the client to write a delegation
+indicator into auth’s code slot:
+code(auth) ← 0xef0100 ∥ addr.
+| {z }
+marker
+3 Recursive Length Prefix (RLP) is Ethereum’s canonical binary serialization format
+
+for encoding byte strings and nested lists; see [30] for the formal specification.
+3
+
+Processing occurs prior to the transaction’s execution phase but
+after sender nonce increment; delegation writes are not reverted
+upon subsequent execution failure.
+
+3.2
+
+contexts: any transaction that addresses 𝑉 , whether initiated by
+the victim, a dApp, or an external contract, is interpreted through
+the logic contained in 𝑇 . This shift grants the attacker a durable
+and unilateral capability to issue operations on behalf of 𝑉 without
+further signatures, enabling arbitrary contract interactions to be
+carried out under 𝑉 ’s authority whenever a suitable trigger occurs.
+
+Delegation State Transition
+
+State model. Let Σ denote the global chain state. For any EOA e,
+let codeΣ (e) denote its code bytes and nonceΣ (e) its nonce. Define
+the set of active delegations at block height ℎ:
+
+Attack lifecycle. An EIP-7702 phishing attack can be modelled as
+a short sequence of on-chain events:
+
+Dℎ = { (auth, target) | codeΣℎ (auth) = 0xef0100∥target }.
+
+process
+
+AuthTx −−−−−→ write_delegation(auth = 𝑉 , target = 𝑇 )
+
+Processing a set-code transaction Tset applies the transition
+
+trigger
+Tset
+
+Σ −−−→ Σ
+
+−−−−−→ ExploitTxs
+
+′
+
+settle
+
+−−−−→ SweepTxs
+
+such that for each valid tuple 𝑎𝑖 with recovered authority auth𝑖 and
+target addr 𝑖 :
+(
+0xef0100∥addr 𝑖 ,
+if addr 𝑖 ≠ 0x0,
+codeΣ′ (auth𝑖 ) =
+empty_code_hash, if addr 𝑖 = 0x0.
+
+subject to the precondition 𝑇 ≠ 0x0. Here:
+• AuthTx is a set-code transaction that contains an authorization
+tuple whose recovered signer (via ecrecover) equals the victim
+𝑉 . This tuple may originate from a legitimate signature by 𝑉 , or
+from a forged one if 𝑉 ’s private key is compromised.
+• write_delegation denotes the client-side update that writes the
+delegation indicator 0xef0100 ∥ 𝑇 into code(𝑉 ).
+• ExploitTxs refers to subsequent transactions that, when executed against 𝑉 , are routed to 𝑇 under delegation semantics.
+These may be initiated by 𝑉 or by third parties, typically performing asset transfers (e.g., transferFrom, ETH sends).
+• SweepTxs finalize the exploit by consolidating assets at attackercontrolled addresses, possibly including swaps or cross-chain
+bridges to obscure provenance.
+
+The global delegation set D is updated accordingly. When a tuple
+specifies addr = 0x0, the client clears the account’s code by resetting its code hash to the empty_code_hash, namely the canonical
+hash used in Ethereum to represent an account with no bytecode.
+This distinguishes genuine EOAs from delegated accounts that
+merely point to the zero address. Note that the transaction charges
+gas for all tuples irrespective of validity; refunds may apply per
+EIP-7702 rules.
+
+3.3
+
+Attack Model
+
+We consider three classes of entities relevant to EIP-7702 phishing. The victim EOA 𝑉 represents an honest user operating through
+standard wallet software. The attacker 𝐴 controls off-chain infrastructure and one or more on-chain addresses intended to receive
+stolen assets. Finally, auxiliary infrastructure 𝑅 consists of wallet
+clients, browser extensions, relayers, or bundlers that forward transactions on behalf of users. These components may behave honestly
+or negligently but do not collude with victims.
+Adversary capabilities. The attacker’s ability to induce unauthorized delegation follows from realistic vectors observed in existing phishing attacks. The adversary can craft deceptive interfaces
+or prompts that elicit a signature from 𝑉 over the authorization
+message msg(𝑐𝑖𝑑, 𝑎𝑑𝑑𝑟, 𝜈), thereby obtaining a valid tuple (𝑦, 𝑟, 𝑠)
+without revealing its behavioural implications. In stronger scenarios, the attacker may have partial or full access to 𝑉 ’s private key,
+enabling the creation of arbitrary authorization tuples without user
+involvement. The adversary can deploy contracts that serve as delegated implementations, broadcast set-code transactions (AuthTx),
+and subsequently issue arbitrarily crafted follow-up transactions
+that exploit the installed delegation. The attacker may monitor
+the mempool and automate sweeps to ensure rapid inclusion, but
+cannot violate consensus rules or break signature schemes.
+Attacker objective. The attacker aims to modify the victim’s account semantics rather than any single transaction outcome. The
+central objective is to cause a persistent delegation write that
+installs an attacker-controlled implementation 𝑇 as the execution
+target for 𝑉 . Once the delegation indicator is in place, the adversary
+gains the ability to shape how 𝑉 behaves in subsequent execution
+
+Condition for successful drain. Let balΣ (𝑋 ) denote the on-chain
+ETH/ERC-20 balances associated with account 𝑋 at state Σ. A successful drain by target 𝑇 exists between blocks ℎ and ℎ ′ if there
+exists a sequence of transactions {𝜏𝑡 }𝑡 ∈ [ℎ,ℎ ′ ] such that:
+∑︁
+balΣℎ′ (𝑉 ) < balΣℎ (𝑉 ) and
+value_to_A(𝜏𝑡 ) ≥ Δ,
+𝑡
+
+where Δ represents a threshold for economically meaningful loss
+in our measurement. For some appreciable Δ > 0 and where the
+execution of at least one 𝜏𝑡 dereferences code(𝑉 ) via the delegation
+indicator and invokes transfer logic directing funds to 𝐴.
+
+4 ATTACK METHODOLOGY
+4.1 Phishing Taxonomy under EIP-7702.
+Phishing under EIP-7702 represents a family of attacks that exploit the semantic gap between the compact authorization tuples
+a user signs and the persistent behavioural changes these tuples
+induce on the account.
+• The first class of attacks targets the delegation pointer itself:
+users are deceived into authorizing an innocuous address that in
+fact hosts attacker-controlled wallet logic. Because the delegated
+implementation is opaque at the time of signing, victims have no
+practical way to evaluate the behaviour they are installing.
+• A second class arises from misuse of persistence. Once delegation
+is written to the account’s code slot, subsequent interactions,
+many of which appear unrelated to the initial authorization, are
+automatically routed through the attacker’s code. This creates a
+4
+
+DeFi protocols as if the victim had initiated the calls directly. Malicious implementations therefore incorporate routines for sweeping
+multiple asset types, including token transfers, NFT transfers, and
+swaps that convert illiquid assets into ETH before extraction. To
+improve robustness, the draining logic avoids assumptions about token behaviour, handles failing transfers through low-level calls, and
+may include multi-hop pathways via attacker-controlled routers.
+Because delegated execution inherits the victim’s authority, no
+impersonation checks are required, making these operations indistinguishable from legitimate wallet interactions at the EVM level.
+Deploying reusable malicious templates. The attacker must
+deploy the delegated implementation as a regular contract with nonempty bytecode, avoiding precompile addresses to satisfy client validation rules. Beyond these constraints, the design space is flexible.
+Attackers often favour compact bytecode to minimize deployment
+cost and avoid attracting attention during the phishing flow. A common strategy is to pre-deploy a library of malicious templates, each
+optimized for a specific extraction strategy such as ERC-20 draining,
+NFT transfers, or multi-step DeFi swaps. Reusing these templates
+allows the attacker to embed only a static address in authorization
+tuples, reducing on-chain artifacts during the actual phishing attempt and simplifying large-scale campaigns. Once deployed, the
+contract address serves as the persistent execution target installed
+on the victim’s account via the authorization tuple.
+
+Figure 2: EIP-7702 phishing attack. The victim signs an authorization
+payload that installs a delegation pointing to an attacker-controlled
+contract. A later call resolves delegation and runs code in the victim’s
+context, allowing the attacker to issue approvals or transfer assets.
+
+temporal separation between the phishing moment and the assetdraining moment, enabling attackers to operate opportunistically
+long after the victim has forgotten the initial action.
+• A third class concerns cross-context execution. Delegated code is
+triggered not only by transactions sent by the victim but also by
+external calls from other contracts, which allows an attacker to
+craft on-chain environments that indirectly activate the malicious
+implementation. This expands the phishing surface beyond the
+user interface and into protocol interactions that the victim never
+observes directly.
+Across those, the unifying factor is that EIP-7702 grants a single
+signed tuple the ability to redefine an account’s execution semantics,
+allowing attackers to shift from manipulating transaction parameters to manipulating the account’s underlying behaviour.
+
+4.2
+
+4.3
+
+Crafting Authorization Tuples
+
+Constructing valid signatures. To successfully induce a malicious
+delegation, the attacker needs to construct authorization tuples that
+pass all client-side validation while appearing benign to the victim’s wallet interface. This requires producing a signature over the
+delegation message using either a phished signature or a compromised private key, ensuring the tuple fields (chain identifier, target
+address, and expected nonce) match the current on-chain state. A
+practical phishing flow therefore begins with presenting the victim
+with an approval request disguised as a routine session message or
+application login, prompting them to sign data that reveals neither
+operational semantics nor code-level intent. When operating without user interaction, compromised-key scenarios allow attackers to
+mass-produce tuples programmatically, synchronizing tuple nonces
+with live chain state.
+
+Constructing Malicious Delegations
+
+Designing the execution entry point. A malicious EIP-7702
+delegation begins with the construction of a contract whose runtime code activates immediately when invoked through delegated
+execution. Since the victim’s address becomes msg.sender, the implementation must treat every entry as implicitly authorized and
+avoid dependence on structured calldata. Practically, this is achieved
+by placing the draining logic inside the fallback function, ensuring
+it executes under any invocation path, including calls originating
+from unrelated dApps or protocol-level interactions. The entry
+routine typically retrieves token balances using balanceOf, issues
+transfer or transferFrom calls to attacker-controlled sinks, and
+forwards ETH using low-level calls that propagate all available
+gas. This design guarantees that the malicious behaviour triggers
+even under minimal calldata or when invoked by accident through
+routine user activity.
+
+Optimize tuple parameters. Beyond validity, attackers optimize
+tuple parameters to avoid detection and maximize stealth. The
+target field embeds the address of the attacker’s delegated implementation, often selected to resemble legitimate module or wallet
+contracts so that the victim sees only an unremarkable address
+rather than executable logic. Attackers frequently reuse the same
+target address across many victims, enabling scalable automation
+and reducing on-chain noise. Chain identifiers may be set to zero to
+widen cross-chain applicability, while tuples are arranged so that
+their ordering respects nonce increments during preprocessing.
+
+4.4
+
+Implementing draining logic. Delegated execution grants the
+attacker access to the victim’s storage and approval relationships,
+enabling contract logic that interacts with ERC-20, ERC-721, and
+
+Embedding Tuples into AuthTx
+
+The core task for the attacker is to embed the collected authorization tuple into a type-4 set code transaction in a way that ensures
+the client will process it and write the delegation indicator into the
+5
+
+Algorithm 1 EIP-7702 Phishing Attack
+
+victim’s account. The attacker serializes the tuple into the authorization list of the transaction and constructs the payload so that it
+satisfies all syntactic requirements of a valid set code transaction.
+This involves populating chain identifiers, gas fields, and outer
+transaction parameters so that the transaction is accepted by nodes
+and appears structurally routine when displayed by the wallet.
+A key element of the attack is that clients process the authorization list before execution, and the resulting delegation write is not
+reverted even if the later execution fails. The attacker exploits this
+by embedding the malicious tuple in a transaction that does not
+need to succeed semantically; the outer call may be a dummy call,
+a benign interaction, or even structured to revert. As long as the
+preprocessing step runs, the attacker’s delegation is installed.
+Wallets typically render only the outer transaction fields and
+do not display the authorization list. The attacker takes advantage
+of this by shaping the AuthTx so that the victim sees an operation
+consistent with familiar UX patterns, such as a harmless approval
+or a verification message. The authorization tuple remains hidden
+inside the payload, and embedding it in a syntactically valid structure allows the attacker to deliver the malicious delegation without
+triggering wallet-level warnings.
+
+4.5
+
+Require: Victim EOA 𝑉 ; attacker implementation 𝑇 ; chain state Σ
+Delegate preparation:
+1: Deploy 𝑇 with fallback: enumerate asset balances; invoke
+ERC-20 transfer/transferFrom; ERC-721 transferFrom;
+forward ETH via call(gas()); perform optional AMM swaps.
+Tuple construction:
+2: 𝑛 ← nonce(𝑉 ) from Σ
+3: msg ← keccak(MAGIC ∥ RLP[𝑐𝑖𝑑,𝑇 , 𝑛])
+4: Obtain (𝑦, 𝑟, 𝑠) via phishing signature or compromised key
+5: 𝑎 ← (𝑐𝑖𝑑,𝑇 , 𝑛, 𝑦, 𝑟, 𝑠)
+AuthTx assembly:
+6: Build type-4 transaction T𝑠𝑒𝑡 :
+– embed 𝑎 into authorization_list
+– fill outer fields: (gas, to, data, access_list)
+7: Broadcast T𝑠𝑒𝑡
+Delegation write:
+8: Client verifies tuple 𝑎
+9: Write delegation:
+code(𝑉 ) ← 0xef0100 ∥ 𝑇
+Execution trigger:
+
+Triggering Delegated Execution
+
+10: Any call to 𝑉 (user tx, external contract, attacker ping):
+
+Once the malicious delegation has been written into the victim’s code slot, any call that reaches the victim’s address activates
+the attacker-controlled implementation. This property yields three
+distinct activation pathways that correspond to the experimental
+scenarios evaluated later in this work(§5).
+
+dispatch(𝑉 ) → 𝑇
+Drain routine:
+11: 𝑇 executes under 𝑉 ’s authority:
+
+– fetch ERC-20 balanceOf; execute token drains
+– move NFTs via transferFrom
+– swap assets → ETH
+– forward value to attacker addresses
+
+① User-driven activation. The most natural trigger occurs when
+the victim initiates a routine transaction through a dApp or wallet interface. Because delegated execution replaces the EOA’s behaviour at the protocol level, any outbound call that targets the
+victim’s own address, or any contract interaction in which the
+victim is the designated sender, immediately dispatches into the
+malicious implementation. This activation path simulates realistic
+user activity and demonstrates that no additional attacker interaction is required once the delegation is installed.
+
+whichever trigger occurs first, enabling flexible and opportunistic
+extraction strategies.
+
+5
+
+EXPERIMENTS
+
+We instantiate the full attack pipeline in a controlled local environment and evaluate the practicality of our attack.
+
+② Attacker-driven activation. Delegated execution also applies
+to external invocations. An attacker can therefore trigger the malicious contract directly by sending a call to the victim’s address,
+even if the victim is offline. This pathway shows that the attacker
+can unilaterally initiate the draining phase after the phishing step
+completes, exploiting the fact that the victim’s account now behaves
+as a contract whose code is supplied by the adversary.
+
+5.1
+
+Experimental Setup
+
+All experiments are conducted on a macOS system (Node.js
+v20.18.2, Hardhat v2.27.0) with Solidity 0.8.24 and optimizer enabled. Hardhat serves as the execution backend, providing a local
+Ethereum network with full tracing support and deterministic account generation.
+
+③ Ambient execution. A third pathway arises from protocol-level
+interactions that involve the victim as part of background system
+activity. Examples include token callbacks, settlement routines, or
+auxiliary contract calls issued by automated services. Any such
+call that targets the victim implicitly resolves to the delegated implementation. This pathway demonstrates that the attacker can
+rely on ordinary on-chain activity to trigger the malicious fallback,
+allowing the draining routine to activate without either the victim
+or the attacker issuing an explicit transaction.
+Across these activation paths, the critical observation is that EIP7702 transforms a phishing event into a persistent execution modification. Once installed, the malicious delegation will be invoked by
+
+Network configuration. We run a Hardhat local network configured with chain identifier 1337, Cancun hardfork rules, and unrestricted contract size to accommodate research artifacts. The genesis
+state is empty, and all experiments begin at block height 0. Hardhat’s deterministic account set is used to fix the victim and attacker
+addresses, each pre-funded with 10,000 ETH to ensure reproducibility. Logging and transaction tracing are enabled throughout.
+EIP-7702 enablement. Since Hardhat does not natively implement
+transaction type 0x04, we extend its execution environment with a
+preprocessing layer that emulates the EIP-7702 state transition rules.
+6
+
+The patch modules (patchEVM.js and patchHardhatNode.js) intercept incoming type-4 transactions, extract the authorization_list,
+validate tuple structure, compute the authority address, and write
+the corresponding delegation indicator (0xef0100 || target) into
+the authority account’s code before execution begins. The patch
+integrates with Hardhat’s environment extension mechanism and
+is automatically applied on node startup.
+
+20
+21
+
+Upon execution, the patched node extracts the authorization list,
+validates the tuple format, verifies the signature using ecrecover,
+and writes the delegation indicator:
+code(𝑉 ) ← 0xef0100∥𝑎𝑑𝑟 .0𝑎𝑎3.
+
+Contracts and deployment. The attacker’s implementation is
+deployed as a compact malicious fallback contract, which executes
+draining logic upon any delegated call (i.e., MaliciousDelegate.sol).
+A mock ERC-20 contract (MockERC20.sol) is deployed to emulate
+fungible assets, and a dummy protocol contract is provided to test
+indirect (ambient) triggers. All deployments are deterministic: contract addresses, bytecode hashes, and deployment transactions are
+recorded for reproduction.
+
+The node-side logs confirm that the preprocessing occurred
+before any transaction execution:
+Listing 2: Node logs confirming correct EIP-7702 preprocessing
+1
+2
+3
+4
+5
+6
+7
+
+Attack tooling. We implement a suite of scripts to orchestrate the
+attack pipeline.
+• generateTuple.js constructs valid authorization tuples by computing the EIP-7702 signing message and producing the corresponding secp256k1 signature.
+• sendAuthTx.js builds and broadcasts type-4 transactions embedding the tuple, installing the malicious delegation on the
+victim account.
+• trigger.js executes all activation scenarios (user-driven, attackerdriven, and ambient triggers) and instruments each transaction
+using debug_traceTransaction.
+• runAndCollect.js aggregates traces, state diffs, balance snapshots, and logs into structured JSON artifacts.
+
+5.2
+
+Experimental Execution
+
+Trigger transaction. The victim initiates the following self-call, which
+Hardhat interprets as a standard eth_sendTransaction request:
+Listing 3: User-triggered ETH transfer to delegated account
+1
+2
+3
+4
+
+Listing 1: Broadcasting the EIP-7702 delegation AuthTx
+
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+
+[7702] detected type -0 x04 transaction
+[7702] extracted authorization_list (1 tuple )
+[7702] tuple signature verified : signer =
+0 xf39fd6e51aad88f6f4c ...9 cfffb92266
+[7702] writing delegation code :
+0 xef01005fbdb2315678a ...642 f64180aa3
+[7702] delegation write persisted ( revert - safe )
+
+Phase 2: Trigger A Attack (User-driven execution). Once the
+delegation indicator has been installed, we first evaluate whether an
+ordinary user-initiated transaction is sufficient to activate the malicious delegate. This scenario models the most common real-world
+trigger condition: a benign wallet action that unintentionally dispatches execution into attacker-controlled logic. The victim sends
+ETH to their own address, which is a routine pattern in many applications (e.g., force-sending gas, resetting a stuck nonce). Since any
+call targeting the victim’s address now resolves to the delegated implementation, this transaction reliably enters the fallback function
+of the malicious contract.
+This scenario is executed first in the experiment sequence (A →
+𝐵 → 𝐶). Thus, the victim begins with the full initial balance4 :
+• ETH: 10000 ♦ (9999.997701772909192554 ♦ after gas fees)
+• Tokens: 2000.0 ♦
+These values define the largest drainage window among all cases.
+
+Phase 1: Delegation installation. The attacker installs a malicious
+delegation on the victim account by embedding an authorization
+tuple into a type 0x04 set-code transaction. The tuple is generated
+offline and encoded in RLP form; the patched Hardhat node interprets this as an EIP-7702 authorization and writes the delegation
+indicator into the victim’s code slot.
+The attacker invokes the following script to build and submit
+the set-code transaction:
+
+1
+
+data : " 0 x "
+}]) ;
+
+const txHash = await provider . send ( "
+e t h _ s e n d T r a n s a c t i o n " , [{
+from : victimAddress ,
+type : " 0 x 0 4 " ,
+gas : " 0 x 5 0 0 0 0 0 " ,
+maxFeePerGas : " 0 x 2 5 4 0 b e 4 0 0 " ,
+maxPriorityFeePerGas : " 0 x 2 5 4 0 b e 4 0 0 " ,
+authorization_list : [
+/ / RLP − d e c o d e d t u p l e :
+/ / [ c h a i n I d , t a r g e t , nonce , y P a r i t y , r , s ]
+[
+" 0 x539 " ,
+" 0 x 5 f b d b 2 3 1 5 6 7 8 a f e c b 3 6 7 f 0 3 2 d 9 . . . 4 1 8 0 aa3 " ,
+" 0 x00 " ,
+" 0 x00 " ,
+"0 x8b1629fcc38442e2899e3c . . . 2 c5c5ef20 ",
+" 0 x1ebf532ec7c60bc6d10e8 . . . 8 d18fbb346 "
+]
+],
+to : victimAddress ,
+
+5
+6
+7
+8
+
+const victimTx = {
+from : " 0 x f 3 9 f d 6 e . . . c f f f b 9 2 2 6 6 " ,
+/ / adr . 2 2 6 6
+to :
+"0 xf39fd6e . . . cfffb92266 ",
+/ / adr . 2 2 6 6
+value : ethers . utils . parseEther ( " 0 . 1 " ).
+toHexString () ,
+gas : " 0 x 5 0 0 0 0 0 "
+};
+/ / This transaction corresponds to txid . b64f
+const txHash = await provider . send ( "
+e t h _ s e n d T r a n s a c t i o n " , [ victimTx ]) ;
+
+Trigger A result. Hardhat’s execution trace confirms that the call
+no longer executes the EOA’s default empty code but immediately
+enters the fallback routine of the malicious delegate (adr.0aa3).
+The trace shows internal calls for both ETH transfer and ERC-20
+sweeping. We extracted the relevant outcomes:
+• The fallback routine executed successfully (verified via debug_traceTransaction).
+4We denote ETH and ERC-20 test tokens with
+
+7
+
+♦ , ♦ for simpliciy.
+
+• All ETH in the victim account, except a minimal ETH dust
+remainder due to gas usage, was transferred to the sink
+address (adr.79c8).
+• All ERC-20 token balances (2,000 ♦ ) were transferred via the
+delegate’s ERC-20 loop.
+
+successful low-level call() to the sink address (adr.79c8) with the
+victim’s remaining balance.
+• Delegated fallback execution was triggered correctly (verified
+via debug_traceTransaction).
+• The remaining ETH balance (0.006564551451274734 ♦ )
+was fully transferred to the sink.
+• No ERC-20 transfers were executed since the token balance
+was already zero.
+
+Observed balance changes (Fig. 3(a)). The experiment framework
+recorded pre/post state snapshots:
+Listing 4: Balance differences for user-driven trigger
+1
+2
+3
+
+ETH transferred :
+ERC -20 transferred :
+fallback_executed :
+
+Observed balance changes (Fig. 3(b)). The experiment infrastructure
+recorded the pre/post balance state as follows:
+
+9999.99113722145791782
+2000.0
+true
+
+Listing 6: Balance differences for attacker-driven trigger
+1
+2
+3
+
+These results confirm that the user-driven trigger reliably activates
+delegated execution and immediately results in full asset drainage,
+demonstrating that no attacker-initiated follow-up is required once
+the victim performs any interaction that routes execution through
+their own address.
+
+0.006564551451274734
+0.0
+true
+
+This confirms that delegated execution remains fully active after
+Scenario A. The attacker can continue to drain any amount of ETH
+(including newly received ether) without any additional signatures
+or wallet interaction from the victim. Scenario B demonstrates that
+EIP-7702 phishing confers persistent and attacker-triggerable control
+over the compromised account.
+Phase 4: Trigger C Attack (Ambient execution after A and B).
+The final scenario evaluates the most subtle activation pathway: an
+ambient call made by a third-party contract. This models real-world
+situations where protocol components (routers, settlement modules, reward distributors, NFT marketplaces, or vault controllers)
+call back into a user’s address as part of routine system behavior.
+Under EIP-7702 delegation, such calls are indistinguishable from
+the victim’s own execution context and therefore silently enter the
+attacker-controlled implementation.
+This scenario is executed last in the sequence (𝐴 → 𝐵 → C). At
+this stage, the victim’s account has already been fully drained by
+Scenarios A and B, leaving:
+• ETH: 0.0 ♦
+• Tokens: 0.0 ♦
+Thus, the protocol-initiated call becomes the only new value
+injection into the victim’s delegated account. The DummyProtocol
+contract (adr.6602) sends 0.1 ETH to the victim as part of its call
+routine, providing a controlled environment to observe whether
+the attacker’s fallback logic still captures externally provided funds.
+Trigger transaction. The DummyProtocol contract exposes a simple entry point, callTarget(address), which forwards ETH and
+issues a low-level call to the victim’s address. The attacker or an
+unaware protocol invokes it as follows:
+
+Phase 3: Trigger B Attack (Attacker-driven execution, after A).
+After the full-drain event in Scenario A, we next evaluate whether
+delegated execution remains active when the attacker, rather than
+the victim, initiates a transaction toward the compromised EOA.
+This scenario models an attacker probing the victim address directly,
+without requiring any further user interaction. Importantly, because
+the delegation indicator persists in the account’s code slot, any
+externally-originating call continues to route execution into the
+malicious delegate.
+This scenario is executed second in the sequence (𝐴 → B → 𝐶).
+Consequently, the victim begins Scenario B with only the residual
+ETH left after the first drain and no remaining tokens:
+• ETH: 0.006564551451274734 ♦
+• Tokens: 0.0 ♦
+These values represent the minimal post-Scenario A balance
+state.
+Trigger transaction. The attacker issues a direct call to the victim’s
+address using an empty calldata payload. Although this call would
+normally do nothing on a standard EOA, the presence of the EIP7702 delegation indicator causes Hardhat’s patched EVM to resolve
+the execution target to the delegate contract:
+Listing 5: Attacker external call to delegated victim (txid.bb1f).
+1
+2
+3
+4
+5
+6
+7
+8
+
+ETH transferred :
+ERC -20 transferred :
+fallback_executed :
+
+const attackerTx = {
+from : " 0 x 7 0 9 9 7 9 7 . . . d 1 7 d c 7 9 c 8 " , / / a d r . 7 9 c 8
+to :
+" 0 x f 3 9 f d 6 e . . . c f f f b 9 2 2 6 6 " , / / adr . 2 2 6 6
+data : " 0 x " ,
+gas : " 0 x 5 0 0 0 0 0 "
+};
+/ / This t r a n s a c t i o n corresponds to txid . bb1f
+const txHash = await provider . send ( "
+e t h _ s e n d T r a n s a c t i o n " , [ attackerTx ]) ;
+
+Listing 7: Ambient trigger via protocol call (txid.b0c1).
+1
+2
+3
+4
+
+Because the delegated implementation places all attack logic in its
+fallback() function, the absence of calldata is immaterial, that is,
+any inbound call is sufficient to trigger the drainage routine.
+
+5
+6
+7
+8
+
+Trigger B result. Hardhat’s execution trace again confirms a full
+delegated dispatch into the malicious fallback function (adr.0aa3).
+Since Scenario A had already transferred all ERC-20 tokens and
+almost all ETH, the only remaining operation is the extraction
+of the last fraction of ETH dust. The fallback routine performs a
+
+9
+10
+11
+8
+
+const protocolCallTx = {
+from : callerAddress ,
+to :
+" 0 x663f3ad6 . . . d07016602 " , / / adr . 6 6 0 2
+data : dummyProtocol . interface .
+encodeFunctionData (
+" callTarget ",
+[ " 0 x f 3 9 f . . . b92266 " ] / / adr . 2 2 6 6
+),
+value : ethers . utils . parseEther ( " 0 . 1 " ).
+toHexString () ,
+gas :
+" 0 x500000 "
+};
+/ / This t r a n s a c t i o n corresponds to t x i d . b0c1
+
+12
+
+const txHash = await provider . send ( "
+e t h _ s e n d T r a n s a c t i o n " , [ protocolCallTx ]) ;
+
+The ambient call causes the protocol contract to attempt a low-level
+target.call{} invocation, which under 7702 delegation routes
+directly into the malicious delegate’s fallback() routine.
+Trigger C result. Execution traces (debug_traceTransaction) confirm that:
+• The protocol contract successfully delivered 0.1 ETH to the
+victim’s address.
+• The delegated fallback executed immediately without any
+interaction from the victim.
+• All 0.1 ETH provided by the protocol contract was transferred to the attacker sink (adr.79c8).
+• No ERC-20 transfers occurred, as all tokens were already
+drained in Scenario A.
+
+(a) Scenario A: User-driven trigger. The victim voluntarily sends a transaction to
+itself, activating the delegated wallet code installed via EIP-7702. The execution drains
+9,999.9911 ETH and 2,000 tokens in a single run, leaving only the gas-dust remainder
+(eth_after = 0.006564551451274734). This corresponds to transaction txid.b64f.
+
+This scenario conclusively demonstrates that any arbitrary contract call (e.g., benign, unaware, or automated) can unintentionally
+activate the attacker’s code.
+Observed balance changes (Fig. 3(c)). The experiment’s data collection framework recorded:
+
+(b) Scenario B: Attacker-driven trigger. After Scenario A, the victim’s balance
+has been reduced to dust. The attacker then directly calls the victim’s address,
+which again executes the attacker’s delegate contract. This drains the remaining
+0.006564551451274734 ETH, bringing the balance fully to zero. This corresponds
+to transaction txid.bb1f.
+
+Listing 8: Balance differences for ambient trigger.
+1
+2
+3
+4
+
+protocol_sent_eth :
+eth_drained :
+tokens_transferred :
+fallback_executed :
+
+0.1
+0.1
+0.0
+true
+
+The fallback logic remains active even after all funds have been
+drained in earlier phases, meaning that any future ETH or tokens
+routed to the victim will be captured immediately and irreversibly.
+This property makes ambient triggers particularly dangerous, as
+many on-chain workflows generate such callbacks without explicit
+user involvement.
+
+6 EXTENDED ATTACK SURFACES
+6.1 (a) EIP-7702 + ERC-4337 Composite Attack
+
+(c) Scenario C: Ambient trigger. A benign protocol contract transfers 0.1 ETH to
+the victim as part of a simulated workflow. The transfer immediately activates the
+victim’s delegated execution and drains the full amount. This corresponds to transaction
+txid.b0c1, demonstrating that any call path, not only active user actions, can activate
+the malicious logic.
+
+EIP-7702 replaces the static semantics of EOAs by allowing them
+to behave as dynamically delegated contract wallets, whereas ERC4337 introduces an alternative transaction flow where UserOperation objects, rather than EOA-signed transactions, define the
+primary unit of execution. When combined, these two designs yield
+a compositional attack surface in which a compromised EIP-7702
+delegation can be remotely and repeatedly activated through ERC4337’s programmatic execution pipeline, without requiring any
+participation from the victim.
+
+Figure 3: Execution traces produced during the EIP-7702 phishing
+attack across three activation pathways.
+
+(c) pre-verification gas sponsorship via Paymasters, whose logic
+may trigger secondary calls into attacker-selected targets.
+In all cases, the call is indistinguishable from routine ERC-4337
+execution, creating a trigger mechanism for the attacker that is
+automated, silent, and entirely decoupled from the victim’s actions.
+
+Trigger surface expansion via EntryPoint. Under EIP-7702
+alone, the attacker must rely on explicit calls to the victim’s address (either user-driven or ambient). ERC-4337 removes this constraint entirely. A malicious UserOperation, bundled by an attackercontrolled or economically-incentivized bundler, can force the EntryPoint to issue internal calls to the victim address during:
+
+Stateful multi-stage exploitation. The combination further enables multi-round exploitation patterns. A single EIP-7702 authorization tuple installs a durable delegation. ERC-4337 then provides
+unbounded opportunities for activation: any future UserOperation,
+even those sent by third parties, may trigger the delegate logic. As
+a result, the attacker can:
+
+(a) validateUserOp, where the callee’s code is executed even
+before the bundle is accepted;
+(b) executeUserOp, which performs arbitrary low-level calls as
+long as gas sponsorship conditions are met;
+
+• embed the delegation at time 𝑡 0 (phishing phase),
+• wait indefinitely,
+9
+
+handleOps(bytes userOps, uint256 r, uint256 vs)
+with MethodID 0x74fa4121, consistent with EntryPoint 0.6.0 deployments.
+The calldata contains seven ABI-decoded fields, of which the
+following two are most significant:
+(a) The element at slot [4], 0x061c0b66dd97c0d1841..., corresponding to the sender or called account within the userOp.
+This address is subsequently the recipient of internal calls
+emitted by the EntryPoint.
+(b) The element at slot [5] (0x00...1fe36b9db6344...) encodes an operation payload routed to the delegated EOA.
+Although it is not an AuthTx, the payload meets the minimal
+requirements for execution: any externally triggered call to
+the victim account is redirected to the installed delegate.
+Observed behavior. The execution trace confirms one internal
+transaction: From: 0xC4a2...D1Bd9 To: 0x061c...3ef7A0
+with a transferred value of 1 wei. Such an internal call cannot
+occur for a native EOA; it is only possible because the EOA has
+been rewritten through a 7702-style delegation indicator. Once the
+EntryPoint delivers the handleOps payload, the EOA’s control flow
+is immediately redirected into the delegate contract, consistent with
+the delegated-execution semantics.
+Implications. This transaction provides empirical evidence that:
+
+Figure 4: In-the-wild EIP-7702 × ERC-4337 composite invocation.
+The transaction (0x4a8fe7ee...c14c3) is a standard ERC-4337 handleOps call, not a typed 7702 AuthTx. Nevertheless, execution is
+routed into delegated code because the callee (0xC4a248BE...D1Bd9)
+carries a 7702-style delegation indicator.
+
+• trigger execution at arbitrary later times {𝑡 1, 𝑡 2, . . . } using
+crafted UserOperations,
+• or rely on ambient 4337 wallet activity by unrelated users to
+trigger the delegate.
+
+• ERC-4337’s handleOps can serve as an unsolicited activation
+vector for accounts modified by EIP-7702 delegation.
+• Bundlers and relayers, which execute handleOps as part of ordinary user-operation flows, may unknowingly relay attackercrafted payloads into delegated EOAs.
+• The delegated EOA is treated by the EntryPoint like a contract
+wallet, enabling arbitrary execution of the delegate’s logic without requiring a 7702 transaction or additional victim signatures.
+The case shows that once a victim’s account is rewritten, the ERC4337 infrastructure itself, in particular bundlers and EntryPoints,
+becomes an involuntary relayer of attacker-selected execution.
+
+Consequences for the 4337 Ecosystem. Once a 7702 delegation
+is installed, the resulting interactions with ERC-4337 extend the
+impact of a single-account compromise into the broader accountabstraction pipeline. (i) Because bundlers unconditionally relay
+UserOperations that target an address, they can be unintentionally transformed into activation carriers, repeatedly invoking the
+delegated victim account. (ii) Paymasters further remove the economic barrier to such activations by covering gas fees, enabling
+an attacker to issue unlimited trigger attempts at negligible cost.
+(iii) At the protocol layer, the EntryPoint executes both validation
+and execution steps against the delegated victim address, thereby
+running attacker-controlled logic under the guise of a normal useroperation flow. Meanwhile, most 4337 wallet interfaces do not
+surface changes to an EOA’s code field, rendering the presence of a
+delegation invisible to the user.
+
+6.2
+
+6.3
+
+(b) Replay-like Cross-chain Exploits
+
+EIP-7702 introduces a special authorization mode in which the
+tuple’s chainId is set to zero, signaling that the signature is chainagnostic and should validate on any network. While intended for
+cross-rollup or L2 migration workflows, this design unintentionally
+reintroduces a replay-like threat surface: a single phishing signature can propagate across multiple chains, each interpreting the
+authorization tuple as locally valid and independently installing
+the delegation indicator.
+The resulting failure mode is qualitatively different from classical
+transaction replay. Traditional replay exploits reuse the same transaction in multiple domains; in contrast, a 7702 tuple with chainId
+= 0 enables the attacker to craft fresh AuthTx transactions on arbitrary networks, all anchored in the victim’s original signature. The
+attacker can therefore reproduce the compromise across L1, rollups,
+testnets, or application-specific L2s, even if the user interacts with
+only one domain. Worse, nonce constraints do not provide meaningful containment: each chain maintains its own independent EOA
+nonce, so the same tuple can pass validation simultaneously on
+every network where the victim address exists.
+
+Case Study: In-the-Wild Composite Attack
+
+We further analyze a real-world transaction observed on the
+PlasmaScan blockchain explorer (Tx: 0x4a8fee...c14c3) (Fig. 4). Although the transaction is not an EIP-7702 AuthTx (type 0x04), its
+execution exhibits a precise interaction pattern between delegated
+EOA execution (7702-style) and ERC-4337’s handleOps flow, illustrating how bundlers can unintentionally deliver attacker-crafted
+payloads to an already delegated EOA.
+Execution context. The transaction originates from 0xcFf. . . 64EDb3
+and targets 0xC4a. . . D1Bd9. Blockchain traces reveal that this target is not a conventional contract wallet but an EOA whose code
+segment contains a 7702-style delegation indicator (0xef0100 ||
+delegate), turning the account into a "pseudo-contract" whose
+control flow is redirected to attacker-supplied logic. Despite this,
+the transaction invokes the ERC-4337 interface:
+10
+
+This transforms a single-signature phishing event into a multidomain takeover. An attacker who installs a malicious delegate on
+one chain can subsequently replicate the installation on any other
+chain, drain assets native to each domain, and persist across bridges
+and sequencer boundaries. In multi-chain wallet ecosystems, where
+users routinely reuse the same EOA across L1, L2s, and sidechains,
+the chainId = 0 mode creates a systemic amplification vector:
+compromise in one environment silently metastasizes into a crosschain compromise without requiring additional user actions. This
+cross-domain persistence fundamentally alters the blast radius of
+7702-based phishing, turning what appears to be a localized attack
+into a platform-wide exploitation channel.
+
+issues. The delegation mechanism grants EOAs the ability to overwrite their account code with an arbitrary delegate target, yet the
+protocol places almost no constraints on what that target may do or
+how the delegation may subsequently be triggered. This openness
+fundamentally expands the attack surface.
+① Unscoped delegation semantics. At the semantic level, an authorization tuple carries only (chainId, target, nonce, yParity,
+r, s) and encodes no execution scope, call restrictions, expiry, or
+safety invariants. Once accepted, the EOA permanently routes all
+calls, e.g., self-calls, third-party calls, protocol callbacks, and even
+ERC-4337 entrypoint calls, into the delegate’s fallback logic. As
+our experiments show, this global binding makes a single phishing
+signature sufficient to induce total execution takeover.
+② Chain-agnostic authorization replay. A second source of risk arises
+from the tuple’s optional chain-agnostic mode (chainId = 0). Because EOA nonces evolve independently on each chain, the same
+signature can be replayed across multiple domains, allowing attackers to replicate delegation installation on every network where the
+victim address exists. We demonstrate that this mechanism directly
+enables cross-chain metastasis of a single phishing event.
+
+Table 3: Cross-chain Replay Attack Outcomes. All three chains independently accept the same chainId=0 authorization tuple.
+Chain (Chain ID)
+
+ETH (V → A)
+Before
+
+Chain A (1337)
+Chain B (2337)
+Chain C (3337)
+Total
+
+6.4
+
+After
+
+ERC-20 (V → A)
+Before
+
+After
+
+10000.0 0.000432931 2000.0
+10000.0 0.000432931 2000.0
+10000.0 0.000432931 2000.0
+
+0.0
+0.0
+0.0
+
+30000.0 ♦
+
+—
+
+—
+
+6000.0 ♦
+
+Mitigation strategies. ① A mitigation is to require authorization
+tuples to carry explicit execution scope. Clients should reject unscoped delegations and instead mandate constraints such as expiry
+bounds or single-use semantics. Wallets can additionally enforce
+"foreground-only" delegation5 , preventing automatic activation by
+protocol callbacks or external contracts. ② To neutralize crosschain replay, implementations should forbid chainId = 0 or treat
+it as invalid unless accompanied by context-binding metadata (e.g.,
+chain-specific salts). Wallets can implement preflight checks that
+compare the tuple’s declared chain with the current network, while
+nodes reject tuples whose chain field does not match the chainId.
+
+Cross-chain Exploits Experiment
+
+To empirically validate whether a single EIP-7702 authorization
+tuple with chainId = 0 can be replayed across multiple execution
+environments, we constructed a controlled three-chain environment using independent Hardhat instances (chain IDs 1337, 2337,
+and 3337), all sharing the same EOA keyspace but maintaining fully
+disjoint nonce and state domains. A malicious delegate contract
+was deployed on each chain at an identical address, mirroring the
+conditions under which cross-chain wallet reuse occurs in practice. The victim then signed a chain-agnostic authorization tuple
+(chainId = 0), after which the attacker submitted the same tuple
+unmodified to all three chains.
+Across all domains, the tuple validated successfully: each chain
+independently verified the victim’s signature, found the victim’s
+nonce to match the advertised tuple nonce, and installed the malicious delegation code 0xef0100 ∥ target. As a consequence, a
+routine self-call from the victim on each chain immediately executed the fallback logic of the attacker’s delegate, draining all
+ETH and ERC-20 balances into the attacker-controlled sink address.
+The replay succeeded identically despite the chains having distinct
+block histories and gas markets, demonstrating that no inter-chain
+coordination or state sharing is required for exploitation.
+Experiment results confirm that the chain-agnostic authorization
+mode creates a true multi-domain replay surface: a single phishing
+signature can be used to compromise every chain on which the victim reuses the same EOA, with each chain treating the authorization
+as fresh and locally valid. For more details, see Appendix A.
+
+7.2
+
+4337 Ecosystem Defenses
+
+Threats within the ERC-4337 pipeline. EIP-7702 delegation interacts with the ERC-4337 execution pipeline in a structurally hazardous way. Once a malicious delegate is installed, any subsequent
+UserOperation that targets the victim’s address, even indirectly
+through a router contract, a paymaster pre-verification callback, or
+another wallet’s batched operation, causes the EntryPoint to route
+control into attacker-supplied code. Because bundlers generally
+treat validateUserOp as pure verification rather than execution,
+the delegated fallback can be activated before the bundle is accepted, shifting phishing activation from a user-driven event to a
+network-driven one. Paymasters further expand the attack surface:
+if a malicious or compromised paymaster sponsors gas for a crafted
+UserOp, the attacker can trigger delegated execution without paying gas and without victim interaction. Finally, since ERC-4337
+wallets often abstract away raw calldata and signature details, UIs
+are poorly positioned to surface delegation state, leaving users unaware that EntryPoint will repeatedly and automatically relaunch
+attacker-controlled execution on their behalf.
+
+7 THREAT MITIGATION
+7.1 Protocol-level Constraints on Delegation
+
+Mitigation strategies. A principled defense requires filtering delegated execution at the EntryPoint, the bundler mempool, and
+
+The phishing vectors we identify stem from structural design
+choices in EIP-7702 rather than from incidental implementation
+
+5 "Foreground-only" delegation restricts delegated execution to transactions explicitly
+
+initiated by the user through the wallet UI.
+11
+
+Ethereum phishing detection. A substantial body of research
+models phishing detection on Ethereum as a graph- or sequenceclassification task over the transaction network. Early approaches
+apply network embeddings or GNN-based feature extraction to
+capture structural and statistical characteristics of accounts [28, 40].
+Subsequent works enhance representation learning through temporal modeling, heterogeneous transaction sequences, and subgraphcentric abstractions that better encode higher-order dependencies and alleviate sparsity [1, 29, 41]. More recent models further
+integrate adaptive attention, dynamic graph evolution, and selfsupervised or incremental learning to improve robustness to longtail degree distributions and rapidly changing on-chain activity [42–
+44]. These methods collectively show that structural signals, temporal trajectories, and localized transaction motifs are informative
+for identifying phishing accounts in large-scale networks.
+A complementary line of work focuses on behavioral signals
+and phishing vectors. Temporal-dependence models capture both
+stable and fluctuating user behavior patterns to distinguish deceptive accounts in dense and noisy environments [2, 45]. Contrastive
+learning and architecture-search frameworks further improve generalization in label-scarce settings [46, 47]. Beyond address-centric
+detection, recent empirical studies [3, 9, 20] characterize specialized
+scams, such as transaction-based phishing, payload-manipulation
+attacks, and NFT-focused theft, revealing previously overlooked
+attack surfaces and releasing large-scale ground-truth datasets.
+These works demonstrate Ethereum phishing from simple financialtransfer scams to complex contract-level deception, but they largely
+assume trustworthy transaction semantics and thus do not account
+for authorization-layer abuses central to our threat model.
+
+the paymaster validation path. ① Bundlers should perform presimulation under the assumption of potential delegation and reject
+UserOps whose top-level target has non-empty EOA code matching
+the 7702 delegation prefix. ② The EntryPoint can restrict delegated
+execution in validateUserOp by enforcing a static check: EOAs
+with installed delegation must not be treated as wallets unless they
+explicitly implement the expected interface. ③ Paymasters should
+refuse to fund UserOps that indirectly route control to an EOA with
+active delegation, eliminating gas-subsidized activation vectors. ④
+Wallet UIs must surface delegation status and warn when 4337
+pipelines would dispatch through attacker-controlled code.
+
+8
+
+RELATED WORK
+
+Ethereum security issues. Ethereum’s attack surface spans contract correctness, inter-contract interaction, and system-level protocol behaviors. Early efforts characterize the fragility of upgradeable smart contracts and proxy patterns, revealing widespread
+misconfigurations that expose privilege-escalation and contracthijacking risks [32], while complementary program-analysis systems strengthen on-chain correctness through bytecode rewriting
+for instant patching [33] or formal inference of financial-security
+invariants [34]. Cross-contract communication further introduces
+confused-deputy vulnerabilities that arise even when individual
+modules are correct [35], and large-scale forensic systems reconstruct historical EVM traces to detect reentrancy, unchecked calls,
+and suicidal contracts directly from transactions [36].
+Beyond functional correctness, newer measurement studies uncover systemic weaknesses in address-poisoning scams exploiting
+UI truncation in wallets [37], in token ecosystems where disposable
+assets and sniper bots enable large-scale rug-pull extraction [38],
+and in coordinated phishing gangs whose transaction motifs reveal
+complex criminal networks [39].
+
+9
+
+CONCLUSION
+
+We reveal that EIP-7702 creates an attack surface fundamentally different from traditional transaction phishing: a shift from
+transaction-level consent to account-level takeover. We formally characterize the mechanism, demonstrate its exploitability, and measure
+its real-world footprint. We demonstrate that a single phishing signature can induce durable and remotely activatable compromise
+both practically (attack under control) and empirically (via largescale on-chain measurement). We further uncover compositional attack surfaces (with ERC-4337 and multi-chain) and outline practical
+mitigations for both protocol designers and wallet implementers.
+
+Blockchain phishing attacks (Table 1). Blockchain phishing has
+expanded from classical user deception to multi-layer manipulation
+of signatures, calldata, and contract semantics. Early attacks rely on
+spoofed DApps, misleading wallet-connect interfaces, and impersonated administrators to trick users into signing harmful transactions [3, 4, 19], while airdrop/giveaway campaigns weaponize socialengineering incentives for credential harvesting [16–18]. As phishing techniques matured, adversaries shifted toward transactionlevel manipulation: crafted calldata and deceptive previews conceal
+token-drain behavior [20–22], and approval-forging attacks exploit
+users’ misunderstanding of ERC-20 allowance semantics to gain
+unbounded control over assets [5, 6].
+More recent attacks embed phishing logic directly into smart
+contracts and application. Malicious NFT minting and marketplace approval traps [26] abuse callbacks or setApprovalForAll
+to seize assets; upgradeable proxies enable covert logic substitution;
+and typed-data (permit) signatures allow replayable or effectively
+unlimited approvals under benign-looking prompts. Ecosystemspecific variants further target DeFi routers via impersonated swap
+or liquidity flows, or manipulate MEV bots with false arbitrage
+signals that trigger draining callbacks. Phishing has become a crosslayer paradigm that exploits calldata semantics and typed signatures, setting the stage for our identification of EIP-7702 authorization hijacking as a new form of delegated-execution phishing.
+
+REFERENCES
+[1] Jinhuan Wang, Pengtao Chen, Xinyao Xu, Jiajing Wu, et al. TSGN: Transaction
+subgraph networks assisting phishing detection in Ethereum. IEEE Transactions
+on Dependable and Secure Computing (TDSC), 2025.
+[2] Medhasree Ghosh, Chirag Dinesh Jain, Raju Halder, and Joydeep Chandra. Temper: Capturing consistent and fluctuating temporal user behaviour for ethereum
+phishing scam detection. In Proceedings of the ACM SIGKDD Conference on
+Knowledge Discovery and Data Mining (SIGKDD), pages 2259–2270, 2025.
+[3] Bowen He, Yuan Chen, Zhuo Chen, Xiaohui Hu, Yufeng Hu, Lei Wu, Rui Chang,
+Haoyu Wang, and Yajin Zhou. Txphishscope: Towards detecting and understanding transaction-based phishing on ethereum. In ACM SIGSAC Conference on
+Computer and Communications Security (CCS), pages 120–134, 2023.
+[4] Scofield Idehen. Web3 scams targeting your crypto in 2024. Medium, Jan. 8, 2024.
+Available: https://medium.com/@Scofield_Idehen/web3-scams-targeting-you
+r-crypto-in-2024-9e7a28817408, 2024.
+[5] Microsoft Threat Intelligence. Ice phishing on the blockchain. Microsoft Security
+Blog, Feb. 16, 2022. Available: https://www.microsoft.com/security/blog/2022/
+02/16/ice-phishing-on-the-blockchain/, 2022.
+12
+
+[33] Michael Rodler, Wenting Li, Ghassan O Karame, and Lucas Davi. Evmpatch:
+Timely and automated patching of ethereum smart contracts. In USENIX Security
+Symposium (USENIX Sec), pages 1289–1306, 2021.
+[34] Wansen Wang, Wenchao Huang, Zhaoyi Meng, Yan Xiong, Fuyou Miao, Xianjin
+Fang, Caichang Tu, and Renjie Ji. Automated inference on financial security of
+ethereum smart contracts. In USENIX Security Symposium (USENIX Sec), pages
+3367–3383, 2023.
+[35] Fabio Gritti, Nicola Ruaro, Robert McLaughlin, Priyanka Bose, Dipanjan Das, Ilya
+Grishchenko, Christopher Kruegel, and Giovanni Vigna. Confusum contractum:
+Confused deputy vulnerabilities in ethereum smart contracts. In USENIX Security
+Symposium (USENIX Sec), pages 1793–1810, 2023.
+[36] Mengya Zhang, Xiaokuan Zhang, Yinqian Zhang, and Zhiqiang Lin. TXSPECTOR: Uncovering attacks in Ethereum from transactions. In USENIX Security
+Symposium (USENIX Sec), pages 2775–2792, 2020.
+[37] Shixuan Guan and Kai Li. Characterizing Ethereum address poisoning attack. In
+ACM SIGSAC Conference on Computer and Communications Security (CCS), pages
+986–1000, 2024.
+[38] Federico Cernera, Massimo La Morgia, Alessandro Mei, and Francesco Sassi. Token spammers, rug pulls, and sniper bots: An analysis of the ecosystem of tokens
+in ethereum and in the binance smart chain. In USENIX Security Symposium
+(USENIX Sec), pages 3349–3366, 2023.
+[39] Jieli Liu, Jinze Chen, Jiajing Wu, Zhiying Wu, Junyuan Fang, and Zibin Zheng.
+Fishing for fraudsters: Uncovering Ethereum phishing gangs with blockchain
+data. IEEE Transactions on Information Forensics and Security (TIFS), 2024.
+[40] Jiajing Wu, Qi Yuan, Dan Lin, Wei You, Weili Chen, Chuan Chen, and Zibin
+Zheng. Who are the phishers? phishing scam detection on ethereum via network
+embedding. IEEE Transactions on Systems, Man, and Cybernetics: Systems (TSMCS),
+52(2):1156–1166, 2020.
+[41] Zhutian Lin, Xi Xiao, Guangwu Hu, Qing Li, Bin Zhang, and Xiapu Luo. Tracking
+phishing on ethereum: Transaction network embedding approach for accounts
+representation learning. Computers & Security, 135:103479, 2023.
+[42] Haojie Sun, Zhaowei Liu, Shenqiang Wang, and Haiyang Wang. Adaptive
+attention-based graph representation learning to detect phishing accounts on
+the ethereum blockchain. IEEE Transactions on Network Science and Engineering
+(TNSE), 11(3):2963–2975, 2024.
+[43] Jiale Zhang, Hao Sui, Xiaobing Sun, Chunpeng Ge, Lu Zhou, and Willy Susilo.
+Grabphisher: Phishing scams detection in ethereum via temporally evolving
+gnns. IEEE Transactions on Services Computing (TSC), 17(6):3727–3741, 2024.
+[44] Shucheng Li, Runchuan Wang, Hao Wu, Sheng Zhong, and Fengyuan Xu. Siege:
+Self-supervised incremental deep graph learning for ethereum phishing scam
+detection. In Proceedings of the ACM International Conference on Multimedia
+(MM), pages 8881–8890, 2023.
+[45] Medhasree Ghosh, Swapnil Srivastava, Apoorva Upadhyaya, Raju Halder, and
+Joydeep Chandra. Catalog: Exploiting joint temporal dependencies for enhanced
+phishing detection on ethereum. In Proceedings of the ACM Web Conference
+(WWW), pages 969–977, 2025.
+[46] Sijia Li, Gaopeng Gou, Chang Liu, Gang Xiong, Zhen Li, Junchao Xiao, and Xinyu
+Xing. Tgc: Transaction graph contrast network for ethereum phishing scam
+detection. In Annual Computer Security Applications Conference (ACSAC), 2023.
+[47] Zhaowei Liu, Haitao Yang, Zhizhong Liu, Xiangfu Zhao, Jindong Zhao, Dong
+Yang, and Yao Shan. Phishing detection on ethereum via graph neural architecture
+search of transaction subgraph. IEEE Transactions on Computational Social Systems
+(TCSS), 2025.
+[48] Dune Analytics. Public query #6158978. https://dune.com/queries/6158978.
+Accessed: 2025-12-07.
+
+[6] Chainalysis Team. Crypto crime: Targeted approval phishing scams on the rise.
+Chainalysis Blog, Dec. 14, 2023. Available: https://www.chainalysis.com/blog/a
+pproval-phishing-cryptocurrency-scams-2023/, 2023.
+[7] SlowMist Security Team. Examining permit signatures: Is phishing of tokens
+possible via off-chain signatures? SlowMist Blog (Medium), May 19, 2023. Available: https://slowmist.medium.com/examining-permit-signatures-is-phishing-o
+f-tokens-possible-via-off-chain-signatures-bfb5723a5e9, 2023.
+[8] Veritas Protocol. Permit Signature Risk Scanner: EIP-2612 Checks. Veritas
+Protocol Blog. Available: https://www.veritasprotocol.com/blog/permit-signatu
+re-risk-scanner-eip-2612-checks, 2025.
+[9] Jingjing Yang, Jieli Liu, Dan Lin, Jiajing Wu, Baoying Huang, Quanzhong Li,
+and Zibin Zheng. Who stole my nft? investigating web3 nft phishing scams on
+ethereum. IEEE Transactions on Information Forensics and Security (TIFS), 2024.
+[10] Dark Reading Staff. Opensea phishers aim to drain crypto wallets of nft enthusiasts. Dark Reading, 2024. Available: https://www.darkreading.com/applicatio
+n-security/opensea-phishers-aim-drain-crypto-wallets-nft-enthusiasts, 2024.
+[11] CryptoNews. DeFi User Loses $1.2m on Fake Uniswap Site As Phishing Scams
+Flood Google Ads. Binance Square, July 21, 2025. Available: https://www.binanc
+e.com/en/square/post/27252729001529, 2025.
+[12] James Morales. Mistrial declared in Ethereum MEV case — jury split over $25m
+exploit. CCN News, Nov. 10, 2025. Available: https://www.ccn.com/news/crypt
+o/mit-brothers-face-trial-25m-ethereum-heist/, 2025.
+[13] Stackup Team. What is an eoa? https://www.stackup.fi/resources/what-is-an-e
+oa, 2025.
+[14] Ethereum Foundation. Account abstraction. https://ethereum.org/roadmap/acc
+ount-abstraction/. Accessed: 2025-12-02.
+[15] Ethereum Foundation. Ethereum: ERC-4337. https:// www.erc4337.io/ , 2023.
+[16] Xigao Li, Anurag Yepuri, and Nick Nikiforakis. Double and nothing: Understanding and detecting cryptocurrency giveaway scams. In Network and Distributed
+System Security (NDSS) Symposium, 2023.
+[17] Jack Filiba. 6 crypto scams to avoid in 2024. Matcha Blog, Jan. 17, 2024. Available:
+https://blog.matcha.xyz/article/6-crypto-scams-to-avoid-in-2024, 2024.
+[18] SlowMist. Analysis of the 2024 blockchain security and anti-money laundering
+annual report: Phishing and scam techniques. Medium, Jan. 10, 2025. Available:
+https://slowmist.medium.com/analysis-of-the-2024-blockchain-security-and-a
+nti-money-laundering-annual-report-phishing-and-scam-503f018c7c4c, 2025.
+[19] Chainalysis. 2023 crypto crime mid-year update: Crime down 65% overall.
+https://www.chainalysis.com/blog/crypto-crime-midyear-2023-update-ranso
+mware-scams/, 2023.
+[20] Zhuo Chen, Yufeng Hu, Bowen He, Dong Luo, Lei Wu, and Yajin Zhou. Dissecting
+payload-based transaction phishing on ethereum. In Network and Distributed
+System Security (NDSS) Symposium, 2025.
+[21] Yekatsiaryna Pshanichnaya-Kosowska. Solana army won’t help — rainbow
+and node drainers on the rampage. Coinpaper, Jan. 15, 2024. Available:
+https://coinpaper.com/3043/solana-army-won-t-help-rainbow-and-node-dra
+iners-on-the-rampage, 2024.
+[22] Simeon Cholakov and Niccolo Pozzolini. Ai phishing series: Part 2 – inside
+wallet drainers and eip-7702 exploits. Three Sigma Blog, June 6, 2025. Available:
+https://threesigma.xyz/blog/opsec/ai-phishing-wallet-drainers-eip7702-part-2,
+2025.
+[23] Hacken Team. Honeypot crypto scam techniques explained: A comprehensive
+guide. Hacken Security Blog, Aug. 25, 2023. Available: https://hacken.io/discov
+er/honeypot-scam/, 2023.
+[24] Vitalik Buterin, Sam Wilson, Ansgar Dietrichs, et al. Eip-7702: Set code for eoas.
+Technical report, Ethereum Improvement Proposals (EIPs), 2024.
+[25] Micah Zoltu. Eip-2718: Typed transaction envelope. https://eips.ethereum.org/
+EIPS/eip-2718, June 2020. Accessed: 2025-12-08.
+[26] Qin Wang and Shiping Chen. Account abstraction, analysed. In IEEE International
+Conference on Blockchain, pages 323–331, 2023.
+[27] Ethereum Foundation. Ethereum: ERC-3074. https:// www.erc3074.io/ , 2025.
+[28] Weili Chen, Xiongfeng Guo, Zhiguang Chen, Zibin Zheng, and Yutong Lu. Phishing scam detection on ethereum: Towards financial security for blockchain ecosystem. In International Joint Conferences on Artificial Intelligence (IJCAI), volume 7,
+pages 4456–4462, 2020.
+[29] Sijia Li, Gaopeng Gou, Chang Liu, Chengshang Hou, Zhenzhen Li, and Gang
+Xiong. Ttagn: Temporal transaction aggregation graph network for ethereum
+phishing scams detection. In Proceedings of the ACM Web Conference (WWW),
+pages 661–669, 2022.
+[30] Gavin Wood. Ethereum: A secure decentralised generalised transaction ledger
+(yellow paper). https://ethereum.github.io/yellowpaper/paper.pdf. Accessed:
+2025-12-08.
+[31] Vitalik Buterin, Eric Conner, Rick Dudley, Matthew Slipper, Ian Norden, and
+Abdelhamid Bakhta. EIP-1559: Fee market change for eth 1.0 chain. https:
+//eips.ethereum.org/EIPS/eip-1559, April 2019. Accessed: 2025-12-08.
+[32] Xiaofan Li, Jin Yang, Jiaqi Chen, Yuzhe Tang, and Xing Gao. Characterizing
+ethereum upgradable smart contracts and their security implications. In Proceedings of the ACM Web Conference (WWWW), pages 1847–1858, 2024.
+
+ETHICAL CONSIDERATIONS
+This work studies a protocol-level phishing vector enabled by
+EIP-7702. We aim to understand and mitigate systemic security
+risks, not to facilitate exploitation. All attacks are analyzed from a
+defensive perspective, with the intent of revealing previously unexamined failure modes in delegated execution and informing safer
+protocol and wallet designs. We do not advocate the deployment of
+any techniques in real-world environments.
+Our experiments were conducted exclusively in controlled settings, including local test environments and post-hoc analysis of
+publicly available on-chain data. We do not interact with real users,
+solicit signatures, or induce delegations on live accounts. Empirical
+measurements rely solely on historical blockchain data and publicly
+13
+
+7702
+
+Transaction
+
+Address
+
+Table 4: Abbreviations (i.e., type.id) for entities used in our EIP-7702 phishing and cross-chain replay experiments.
+
+Type
+
+ID
+
+Full Identifier
+
+Notes
+
+adr.
+adr.
+adr.
+adr.
+adr.
+adr.
+
+2266
+79c8
+0aa3
+18bc
+3292
+6602
+
+0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+0x5fbdb2315678afecb367f032d93f642f64180aa3
+0x8464135c8F25Da09e49BC8782676a84730C318bC
+0x71C95911E9a5D330f4D621842EC243EE1343292e
+0x663f3ad617193148711d28f5334ee4ed07016602
+
+Victim EOA (same across all 3 chains)
+Attacker EOA / sink (same across chains)
+Malicious delegate (local experiment)
+Malicious delegate (cross-chain attack)
+Mock ERC-20 token (same address on all chains)
+Dummy protocol contract (ambient trigger)
+
+txid
+txid
+txid
+txid
+txid
+
+7d62
+13a0
+b64f
+bb1f
+b0c1
+
+0x6b78de5fb9d70f8a9f1ade14cd52a11f6093493c76489f31c4d14b6341307d62
+0x2d2346629372f11a684d712d3024b71576d2666ef655c49003d6940b68d613a0
+0x2b6d3367fea34d9f3b2475e622279139d422cda7ff7c18530837508e4b1eb64f
+0x5d570a6a057fe11091efca68757c81a59f67cacb140db4a7db1cce8e5730bb1f
+0xb616a70460da2a0f7a113bde6fafede063d35e7d7c4255311f7b4ffab9a3b0c1
+
+AuthTx installing delegation (local)
+Deployment of malicious delegate
+Scenario A — user-driven trigger
+Scenario B — attacker-driven trigger
+Scenario C — ambient trigger
+
+txid
+txid
+txid
+txid
+txid
+txid
+
+A.auth
+B.auth
+C.auth
+A.trg
+B.trg
+C.trg
+
+0x53dd7567680e408687d2a8fc9d9f2893474c0d068bdaf666b2e95999cdc976bc
+0xbc3b443e09f3130a63250cd5191515fdc0fa30faf3957cf12ecdff08e59e0595
+0x6461ee84b806e053cd22809dedb11fc9ae621c86362ea59f8d36d73c19ab25a1
+0xbe2f31a4519c97332c3c3f97ccd248c8b3bc1ced43ef9f1a955c46c329b0fac4
+0x3b955c7e7f6fc6e2ea66fdf93233a1f1b081723b6701eb51fca0f72cb57954dc
+0x89ae46d7c694707865b1ebcf7c4a2314782fa9bdd72276b92535c1352fa3c35b
+
+Chain A authorization (chainId=0)
+Chain B authorization
+Chain C authorization
+Chain A trigger transaction
+Chain B trigger transaction
+Chain C trigger transaction
+
+auth.
+auth.
+del.
+tuple
+
+msg
+sig.
+ef01
+chain0
+
+MAGIC || RLP([chainId=0, target=0x8464...18bc, nonce=0])
+r = 0x9a9a1b..., s = 0x67668..., yParity = 1
+0xef01008464135c8f25da09e49bc8782676a84730c318bc
+0xf85a0094846413...b2c6166
+
+Chain-agnostic signing message
+Signature extracted from tuple
+Delegation code written on all 3 chains
+RLP-encoded chainId=0 tuple
+
+A.2
+
+observable transactions, without deanonymization attempts of offchain identities. No private keys, credentials, or sensitive personal
+information were accessed or collected at any stage.
+To reduce the risk of misuse, we omit exploit-ready artifacts,
+such as deployable malicious contract templates or end-to-end
+phishing scripts. Where attack mechanisms are discussed, they are
+described at a conceptual and analytical level sufficient for security
+understanding but not optimized for replication. We have shared
+our findings with relevant ecosystem stakeholders and focus our
+contributions on protocol-level and ecosystem-level mitigations.
+
+A malicious delegate contract (adr.18bc) was deployed on all
+three chains using the attacker’s EOA. Because the same mnemonic
+and identical deployment nonce were used, all deployments resolved deterministically to the same address:
+
+A.3
+
+4
+5
+
+0 xf85a00948464135c8f25da09e49bc8782676a84730c31
+8 bc0001a09a9a1bd58376d5185d421b67c5c76078cd7d74
+70 b27987faa519fb3015f7df3ca0676682acce38380ea0c
+e9c4a2683841c01906ea83e156466e47310805b2c6166
+
+1
+2
+3
+4
+
+test test test test test test test test test test
+test junk
+
+Decoded tuple components:
+• chainId: 0 (chain-agnostic)
+• target: adr.18bc
+• nonce: 0
+• signature: (𝑦, 𝑟, 𝑠) matching victim’s key
+
+This ensured that the victim (adr.2266) and attacker (adr.79c8) EOAs
+appeared identically across all three chains, while maintaining
+independent nonce spaces and account states.
+Node configuration.
+
+3
+
+Construction of Chain-agnostic
+Authorization Tuple
+
+We created a single (7702) authorization tuple with chainId = 0,
+instructing the victim to delegate execution to a malicious contract:
+
+We instantiated three independent Hardhat networks on local
+ports 8545, 9545, and 10545, configured with chain identifiers 1337,
+2337, and 3337, respectively. All networks shared the same BIP-39
+mnemonic:
+
+1
+2
+
+0 x8464135c8F25Da09e49BC8782676a84730C318bC
+
+1
+
+A FULL EXPERIMENTAL DETAILS
+A.1 Multi-chain Environment Setup
+
+1
+
+Uniform Deployment of the Delegate
+Contract
+
+This tuple was saved as tuple_chain0.hex and reused verbatim
+across all three networks.
+
+networks : {
+chainA : { url : " h t t p : / / 1 2 7 . 0 . 0 . 1 : 8 5 4 5 " , chainId
+: 1337 , accounts : { mnemonic } } ,
+chainB : { url : " h t t p : / / 1 2 7 . 0 . 0 . 1 : 9 5 4 5 " , chainId
+: 2337 , accounts : { mnemonic } } ,
+chainC : { url : " h t t p : / / 1 2 7 . 0 . 0 . 1 : 1 0 5 4 5 " , chainId
+: 3337 , accounts : { mnemonic } } ,
+}
+
+A.4
+
+14
+
+Replaying the Authorization on Three
+Chains
+
+The authorization tuple was submitted to all networks through
+identical AuthTx transactions.
+Chain A authorization.
+
+(a) Top 10 ETH Victims by Loss
+
+(b) Top 10 ETH Delegators by Total Loss
+
+(c) Top 10 NFT Contracts by Stolen Items
+
+Figure 5: Cross-category comparison of high-loss entities in EIP-7702–related incidents.
+
+1
+2
+
+over 150k 7702-related authorization and execution transactions
+collected from major EVM chains, spanning more than 26k unique
+victim addresses and hundreds of distinct delegator and vaultstyle contracts. This dataset forms the basis of our measurement of
+adoption patterns (RQ1) and real-world impact (RQ2).
+
+txHash = 0 x53dd7567680e4086 ... e95999cdc976bc
+victim . code = ef0100 8464135 c8 ... a4730c318bc
+
+Chain B authorization.
+1
+2
+
+txHash = 0 xbc3b443e0 ...57 cf12ecdff08e59e0595
+victim . code = ef0100 8464135 c8 ... a4730c318bc
+
+Chain C authorization.
+1
+2
+
+B.1
+
+txHash = 0 x6461ee84b806e0 ...8 d36d73c19ab25a1
+victim . code = ef0100 8464135 c8 ...84730 c318bc
+
+In all cases, the tuple was accepted despite originating from a different chain context, confirming that chainId = 0 bypasses chainspecific authorization checks.
+
+A.5
+
+Triggering Delegated Execution on Three
+Chains
+
+To trigger the malicious fallback() handler, we sent a self-call
+from the victim on each chain.
+Chain A trigger.
+1
+
+txHash = 0 xbe2f31a4519c97332 ...3955 c46c329b0fac4
+
+Chain B trigger (nonce=1).
+1
+
+txHash = 0 x3b955c7e7f6fc6e ... b51fca0f72cb57954dc
+
+RQ1.2: Concentration of delegator contract endpoints. Next,
+we study which delegator contracts receive these authorization
+calls. Fig. 6(a) reports the frequency distribution of the top contracts. The results reveal an extreme heavy-tailed structure: the
+most frequently used contract is authorized more than 1.2 M times,
+nearly three times larger than the second-ranked address. A handful
+of contracts dominate the vast majority of delegation flows, while
+a long tail of lightly used contracts accounts for the remainder.
+Such concentration signals systemic risk. Because an EIP-7702
+delegation grants full operational authority over a user account
+until revoked, any vulnerability or malicious behavior in these
+high-volume endpoints can compromise a disproportionately large
+user population. Moreover, the sharp reuse patterns point to shared
+templates, e.g., wallet libraries or phishing toolchains, funneling
+users toward the same authorization targets.
+
+Chain C trigger (nonce=2).
+1
+
+txHash = 0 x89ae46d7c6947 ...276 b92535c1352fa3c35b
+
+Execution traces confirmed that:
+• The victim’s call routed into adr.18bc,
+• All ETH (minus gas residual) was swept to adr.79c8,
+• All 2,000 tokens were transferred to the attacker,
+• The fallback completed without revert.
+RQ1 Findings. EIP-7702 adoption exhibits clear security risks: (i)
+delegation activity grows rapidly across chains; (ii) authorization flows
+concentrate heavily on a few high-volume delegator contracts; (iii)
+many of these endpoints belong to adversarial or suspicious categories.
+
+B
+
+RQ1: How is EIP-7702 Being Adopted?
+
+To assess whether EIP-7702 creates a practically exploitable attack surface, we perform a cross-chain empirical study focusing on
+three core aspects.
+RQ1.1: Temporal growth of 7702 delegations. We first examine
+the temporal dynamics of 0x04-type delegation calls across chains.
+Fig. 1 shows the daily and cumulative volume of EIP-7702 authorizations. Daily activity exhibits pronounced volatility, including
+repeated spikes reaching millions of delegations per day. These
+bursts are inconsistent with organic user behavior and instead suggest automated issuance, potentially through bot-controlled wallets
+or phishing kits that batch delegation requests.
+In contrast, the cumulative curve grows smoothly and monotonically, surpassing tens of millions of total delegations within months.
+This pattern provides early evidence that 7702 delegations are being
+executed at scale, in ways that substantially affect real users.
+
+EMPIRICAL ON-CHAIN MEASUREMENT
+
+RQ1.3: Category-level characterization of delegator endpoints.
+We further label and cluster delegator contracts to understand the
+behavioral roles and ecosystem actors behind them. Fig. 6(b) shows
+the category-level distribution, limited to families contributing at
+least 2% of all delegations. Strikingly, crime-linked contract families
+
+To understand the practical security implications of delegated
+execution under EIP-7702, we perform a pilot empirical study based
+on real-world on-chain activity. Our dataset combines transactions
+collected from major EVM chains with public blockchain analytics
+sourced from Dune Analytics [48]. In total, our dataset aggregates
+15
+
+RQ2 Findings. Malicious EIP–7702 delegations cause substantial realworld harm: (i) victim losses are heavily skewed, with several catastrophic multi-ETH liquidations; (ii) a few high-impact delegator contracts account for most stolen value; (iii) NFT assets are also drained
+at scale, with major collections losing hundreds of items.
+
+RQ2.1: How are losses distributed across victims? We begin by
+quantifying the ETH stolen from users whose 7702 delegations were
+abused. Fig. 5(a) reports the top ten victims ranked by total ETH
+loss. The distribution is highly skewed and exhibits strong heavytailed behavior. The largest victim suffered a catastrophic loss of
+over 3,300 ETH, more than five times the second-ranked address.
+Subsequent victims lost between 600–700 ETH, while a long tail
+of users lost 30–150 ETH each. These findings confirm that the
+attack surface created by EIP-7702 leads directly to high-magnitude
+monetary damage.
+
+(a) Frequency Distribution of Delegator Contracts in EIP-7702 Transactions
+
+RQ2.2: Which delegator contracts are responsible for the
+largest aggregate losses? We next analyze losses aggregated by
+delegator contract, i.e., the entities empowered by 7702 delegations
+and subsequently used for theft. Fig. 5(b) ranks delegator contracts
+by the cumulative ETH stolen through them. The results reveal a
+small number of high-impact malicious endpoints. The top two delegators each caused more than 400 ETH of losses, closely followed
+by several others in the 300–380 ETH range.
+The remarkably similar loss magnitudes across multiple delegators suggest stable, long-running phishing infrastructures rather
+than opportunistic one-off deployments. Attackers tend to repeatedly reuse the same delegator contracts, consistent with "scam-asa-service" models that operate week to month timescales.
+RQ2.3: How extensively are NFTs stolen? We examine NFT theft
+resulting from malicious delegations. Fig. 5(c) ranks NFT contracts
+by the number of unique items stolen. The top two collections each
+lost over 1,000 NFTs, while several others lost between 400–700
+items. Even contracts ranked near the bottom of the top-ten list
+experienced losses of 140–200 unique items.
+These results confirm that 7702-based attacks are not limited to
+fungible tokens or ETH. Because NFT transfers do not implement
+allowance mechanisms and can be batched via multicall, a single
+malicious delegation enables attackers to drain all NFTs held by a
+victim’s account within one block, at negligible gas cost.
+
+(b) Delegator Contract Usage by Label Category
+
+Figure 6: Distribution and categorization of delegator contracts invoked by EIP-7702 authorization transactions.
+
+(e.g., CrimeMulticall, Porwarder, CrimeEnjoyor and its variants) account for nearly half of all authorizations, far surpassing
+legitimate wallets or audited implementations such as Metamask
+or Trust Wallet. This composition demonstrates that adversarial
+infrastructures are disproportionately responsible for shaping the
+real-world use of EIP-7702.
+The prevalence of repeated contract variants further indicates
+that phishing groups and malicious operators reuse common templates, which substantially lowers the marginal cost of deploying
+new attacks. Additionally, a nontrivial fraction of contracts remains
+uncategorized, suggesting that our measurements may underestimate the true prevalence of adversarial sources.
+
+B.2
+
+RQ2: What is the Impact of Malicious
+EIP-7702 Delegations?
+
+We seek to quantify the concrete economic consequences of 7702
+abuse, e.g., how much victims lose, which delegator contracts are
+responsible, and how far the damage spreads across asset types
+such as ETH and NFTs.
+16
+
+

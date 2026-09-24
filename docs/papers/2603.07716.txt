@@ -1,0 +1,1928 @@
+arXiv:2603.07716v1 [cs.CR] 8 Mar 2026
+
+SoK: The Evolution of Maximal Extractable Value,
+From Miners to Cross-Chain
+Davide Mancino
+
+Hasret Ozan Sevim
+
+University of Milano-Bicocca
+Milano, Italy
+davide.mancino@unimib.it
+
+University of Camerino
+Catholic University of Sacred Heart
+Camerino & Milano, Italy
+hasretozan.sevim@unicam.it
+
+Abstract—This Systematization of Knowledge (SoK) provides a
+comprehensive historical analysis of Maximal Extractable Value
+(MEV) in blockchain systems, tracing its conceptual evolution
+through three distinct eras. We organize the fragmented literature on MEV into a unified chronological framework, beginning
+with Era I (August 2014 – August 2020), which introduced Miner
+Extractable Value from pmcgoohan’s seminal Reddit warning
+through the “Dark Forest” recognition, covering Proof-of-Work
+systems with public mempools and Priority Gas Auctions. Era II
+(August 2020 – April 2024) marks the generalization to Maximal
+Extractable Value, encompassing formal taxonomies, Realized
+Extractable Value, Proposer-Builder Separation, the Ethereum
+Merge, MEV-Boost, and the integration of non-atomic and
+CEX-DEX arbitrage. Era III (April 2024, present) addresses
+the frontier of Cross-Chain MEV, beginning with early studies
+on Layer-2 ecosystems, where value extraction spans multiple
+blockchains, rollups, bridges, and sequencers. We present a
+conceptual taxonomy distinguishing potential from realized extractable value, and single-domain from cross-domain phenomena. Our systematization identifies mitigations that emerged in
+response to each era, highlights measurement challenges, and
+proposes a research agenda for standardized metrics, detection
+benchmarks, and cross-chain infrastructure design.
+Index Terms—Maximal Extractable Value, Cross-Chain MEV,
+Decentralized Finance, Blockchain Security, Transaction Ordering, Proposer-Builder Separation, Cross-Domain Arbitrage,
+Bridge Security
+
+understanding, industry practice, and protocol design have coevolved in response to the challenges posed by extractable
+value. Figure 1 provides a visual overview of this threeera framework, highlighting key milestones and the dominant
+paradigms that characterized each period.
+The economic significance of MEV has grown substantially.
+Early measurements by Daian et al. [1] identified over $6
+million in atomic arbitrages on Ethereum. Wu et al. [2]
+documented 233.8 million USD extracted through CEX-DEX
+arbitrage alone over a 19-month period (August 2023 – March
+2025). Cross-chain arbitrage has added another dimension,
+with Oz et al. [3] identifying 242,535 cross-chain arbitrages
+generating 8.65 million USD in profit. These figures represent
+lower bounds, as many extraction strategies remain undetected
+or unmeasured.
+Timeline (2014–Feb 2026)
+
+Era III
+Era II
+
+Era I
+
+pmcgoohan’s warning
+Aug 2014
+
+Flash Boys 2.0
+2019
+
+REV formalization
+2021
+
+Dark Forest
+2020
+
+Flashbots launch
+Aug 2020
+
+Ethereum Merge
+Sep 2022
+
+I. I NTRODUCTION
+Maximal Extractable Value (MEV) has emerged as one
+of the most significant phenomena affecting the security,
+fairness, and economic dynamics of blockchain-based systems.
+Originally termed “Miner Extractable Value” in the context of
+Proof-of-Work (PoW) consensus, MEV refers to the profit that
+can be extracted by entities controlling transaction ordering
+within a block. As blockchain ecosystems have evolved, the
+idea of MEV and how it is measured has also changed, moving
+from an early concern about keeping the network stable to a
+multi-billion dollar industry with specialized players, advanced
+infrastructure, and even cross-chain strategies.
+This Systematization of Knowledge takes a historical perspective, explicitly tracking the evolution of MEV from its
+origins to its current cross-chain manifestations. Unlike surveys that organize literature by topic or technique, we structure
+our analysis around three chronological eras, each characterized by distinct conceptual shifts, empirical discoveries, and
+infrastructural responses. This approach reveals how academic
+
+Dencun upgrade
+Mar 2024
+
+PBS / MEV-Boost
+2022
+
+Öz et al.
+Cross-chain arbitrage
+Jan 2025
+
+Torres et al. L2 analysis
+Apr 2024
+2014
+
+2015
+
+2016
+
+2017
+
+2018
+
+Era I (Aug 2014–Aug 2020)
+
+2019
+
+2020
+
+2021
+
+2022
+
+Era II (Aug 2020–Apr 2024)
+
+2023
+
+2024
+
+2025
+
+2026
+
+Era III (Apr 2024–present)
+
+Fig. 1: Timeline of MEV evolution across three eras. The
+timeline illustrates the progression from Miner Extractable
+Value in Era I through the industrialization of extraction
+in Era II to the cross-chain frontier in Era III, with key
+publications and infrastructure developments marked at their
+respective dates.
+
+A. Motivation and Scope
+The MEV literature has grown rapidly but remains fragmented across multiple research communities, including cryptography, distributed systems, financial economics, and market
+microstructure. Terminology varies across papers, with different authors using distinct definitions for overlapping concepts.
+
+The transition from single-chain to cross-chain MEV introduces additional complexity, as value extraction now depends
+on coordinating actions across heterogeneous domains with
+different consensus mechanisms, latency characteristics, and
+trust assumptions.
+Our systematization addresses three objectives. First, we
+consolidate scattered studies and terminologies into a unified
+taxonomy, clarifying what has been explored and identifying gaps. Second, we trace the causal connections between
+conceptual developments, showing how each era’s challenges
+motivated the next era’s innovations. Third, we provide practitioners and researchers with a roadmap for understanding the
+current state of cross-domain MEV and the open problems
+that remain.
+The scope of this SoK encompasses academic publications, industry reports, and technical documentation spanning
+2014 to 2025. We focus primarily on Ethereum and EVMcompatible chains, which represent the majority of MEV
+research, while noting relevant work on other blockchain
+architectures including Algorand [4], Polygon [5], and various
+Layer-2 rollups [6]–[8].
+B. Organizing Principles
+We organize the literature along two primary axes. The
+temporal axis spans from 2014 to 2025, divided into three eras:
+Era I covers the birth and formalization of Miner Extractable
+Value (August 2014 – August 2020), from pmcgoohan’s Reddit warning through the “Dark Forest” article; Era II addresses
+the generalization to Maximal Extractable Value (August 2020
+– April 2024), encompassing taxonomies, Realized Extractable
+Value, PBS, the Merge, and non-atomic MEV; and Era III
+focuses on Cross-Chain MEV (April 2024 – present), initiated
+by Torres et al.’s Layer-2 rollup analysis. The conceptual axis
+distinguishes between potential extractable value (what could
+be extracted given optimal ordering) and realized extractable
+value (what is actually extracted in practice), as well as
+between single-domain MEV (confined to one blockchain or
+ordering domain) and cross-domain MEV (requiring coordination across multiple domains).
+This two-dimensional organization enables systematic positioning of research contributions. Works focused on theoretical
+bounds occupy the “potential” dimension, while empirical
+measurements populate the “realized” dimension. Similarly,
+single-chain analyses contrast with cross-chain studies that
+require correlating data across heterogeneous sources.
+C. Contributions
+This systematization makes several contributions to the
+MEV literature:
+•
+
+We provide a comprehensive historical account of MEV’s
+conceptual evolution, organized explicitly around three
+eras with clear transition points marked by seminal
+works. While prior surveys have cataloged MEV phenomena [9]–[11], our chronological framing highlights
+the causal connections between eras.
+
+We synthesize definitions from across the literature,
+proposing a unified terminology that distinguishes key
+concepts including domains, sequencers, potential vs.
+realized MEV, and atomic vs. non-atomic extraction.
+• We present detailed taxonomies of MEV phenomena,
+techniques, and mitigations, mapped to the eras in which
+they emerged.
+• We compile empirical findings across studies, identifying
+methodological patterns and measurement challenges.
+• We outline open problems and a research agenda focused
+on cross-chain MEV detection, measurement standardization, and mitigation design.
+•
+
+II. P RELIMINARIES AND D EFINITIONS
+Before examining the historical evolution of MEV, we
+establish the foundational concepts and terminology that will
+be used throughout this systematization.
+A. Transaction Ordering and Block Production
+Blockchain systems execute state transitions through transactions that are grouped into blocks. The entity responsible for
+proposing a block, whether a miner in Proof-of-Work (PoW)
+or a validator in Proof-of-Stake (PoS), has discretion over
+which transactions to include and in what order. This ordering
+power is the fundamental source of extractable value, as certain
+transaction sequences yield profits that would not be available
+under alternative orderings.
+In the simplest model, pending transactions reside in a
+public mempool visible to all network participants. Block
+producers select transactions based on fees, typically prioritizing higher-paying transactions. However, the visibility of
+pending transactions creates opportunities for strategic actors
+to observe profitable trades and insert their own transactions
+to capture value, a practice known as front-running [12].
+The economics of block production have been extensively
+analyzed. Brolley and Zoican [13] compared high-frequency
+trading infrastructure costs between centralized and decentralized exchanges, showing that gas auction mechanics create
+distinct cost structures for speed acquisition. John et al. [14]
+provided a comprehensive economic analysis of Ethereum
+post-Merge, examining staking rewards, EIP-1559 dynamics,
+and MEV distribution.
+B. Domains and Sequencers
+Following Obadia et al. [15], we define a domain as any
+system where a designated entity, called a sequencer, controls
+the ordering of state-changing actions. A domain may be a
+Layer-1 blockchain, a Layer-2 rollup, a centralized exchange,
+a bridge protocol, or any other system with a defined ordering
+mechanism. The sequencer for a PoW chain is the miner
+who produces a block; for a PoS chain, it is the validator
+selected as proposer; for a rollup, it is typically a centralized
+or decentralized sequencer operator.
+An action in a domain is any operation that modifies state,
+such as a transaction, a swap, or a message relay. The set
+of reachable states from a given initial state depends on the
+
+sequence of actions executed. Extractable value arises when
+different action sequences lead to different final balances for
+the sequencer or collaborating parties.
+Table I summarizes the key domain types and their sequencer characteristics. The diversity of sequencer implementations creates heterogeneous MEV landscapes across the
+blockchain ecosystem.
+
+Chi et al. [19] remeasured MEV arbitrage and sandwich activity on Ethereum, arguing that prior methods under- or overcounted due to heuristic limitations. Their refined pipeline,
+designed to be robust in the post-Merge setting, estimates
+around $675 million of pre-Merge MEV, highlighting how
+methodological choices affect measurement.
+
+C. Single-Domain Extractable Value
+
+MEV extraction can be understood through two fundamental
+primitives that combine to form more complex strategies [20].
+Understanding this compositional structure is essential for
+analyzing both existing and emerging MEV phenomena.
+1) Ordering Primitives: The two basic ordering primitives are front-running and back-running. In front-running,
+an attacker observes a pending victim transaction TV in the
+mempool and inserts their own transaction TA to execute
+before TV , profiting from the anticipated state change. In
+back-running, the attacker’s transaction TA is positioned to
+execute immediately after TV , capturing value from the state
+change induced by the victim’s transaction. These primitives
+form the building blocks from which most MEV strategies
+are composed, though certain strategies such as time-bandit
+attacks rely on fundamentally different mechanisms (chain
+reorganization) that fall outside this compositional framework.
+2) Derived Strategies: Complex MEV strategies emerge
+from combining these primitives. Table II summarizes the
+major strategies and their compositional structure.
+Arbitrage is fundamentally a back-running strategy: the
+arbitrageur waits for a trade to create a price discrepancy
+across venues, then executes immediately after to capture
+the difference. Wang et al. [21] formalized cyclic AMM
+arbitrage, identifying 292,606 cycles on Uniswap V2 with
+revenue exceeding 34,429 ETH. Liquidations similarly employ
+back-running: the liquidator monitors collateral positions and
+executes immediately after prices move to trigger liquidation
+thresholds [16].
+Sandwich attacks represent the canonical combination of
+both primitives. The attacker front-runs the victim’s swap with
+a transaction that moves the price unfavorably, then backruns with a transaction that profits from the price movement
+induced by the victim. Torres et al. [20] empirically analyzed
+over 11 million Ethereum blocks, identifying $18.41 million
+in profits from front-running attacks (displacement, insertion,
+and suppression).
+Just-in-Time (JIT) liquidity also combines both primitives
+but with a different objective: the JIT provider front-runs a
+large swap by adding concentrated liquidity, earns fees from
+the swap, and back-runs by removing the liquidity. Di Nosse
+et al. [23] identified statistical regularities in DEX trading associated with JIT providers and sandwich attackers, revealing
+distinctive market microstructure patterns on Uniswap v3.
+Time-bandit attacks represent a qualitatively different strategy involving blockchain reorganization. When MEV opportunities in past blocks exceed the cost of re-mining, miners
+may be incentivized to fork the chain and capture historical
+value [1]. This links MEV directly to consensus security.
+
+Building on Babel et al. [16], single-domain extractable
+value refers to the profit available to a sequencer within a
+single ordering domain. Formally, given an initial state s0 and
+a set of pending actions A, the single-domain MEV is the
+maximum profit achievable by selecting and ordering a subset
+of actions:
+MEVsingle (s0 , A) = max profit(s0 , σ)
+σ∈Σ(A)
+
+(1)
+
+where Σ(A) denotes all possible orderings of subsets of
+A. This definition captures potential extractable value, the
+theoretical maximum under optimal strategy.
+Bartoletti et al. [17] provided the first mechanized formalization of MEV in the Lean theorem prover, enabling machinechecked proofs of upper bounds for extractable value. Their
+work includes the first machine-checked proof of optimality
+for sandwich attacks in Automated Market Makers.
+D. Cross-Domain Extractable Value
+Cross-domain MEV extends this concept to multiple domains [15]. When actions across domains D1 , D2 , . . . , Dn
+can be coordinated, extractable value may exceed the sum of
+single-domain values due to arbitrage opportunities, atomic
+execution guarantees, or information advantages spanning domains. The cross-domain MEV is defined as:
+n
+X
+profiti (si , σi ) (2)
+MEVcross (s, A1 , . . . , An ) = max
+σ1 ,...,σn
+
+i=1
+
+where the maximization considers joint orderings across all
+domains, potentially requiring sequencer collusion or unified
+control.
+The cross-domain formulation captures several important
+phenomena. When sequencers across domains can coordinate, they may extract value exceeding what any single sequencer could capture independently. This creates incentives
+for vertical integration and centralization across the multichain ecosystem.
+E. Potential vs. Realized Extractable Value
+A critical distinction in the literature is between potential
+MEV, the theoretical maximum given perfect information and
+execution, and realized MEV, the profit actually captured by
+searchers and block producers. The gap between potential
+and realized MEV arises from competition, execution failures,
+latency, and transaction costs. Empirical studies increasingly
+focus on realized MEV as the economically relevant quantity [18].
+
+F. MEV Primitives and Strategies
+
+TABLE I: Domain Types and Sequencer Characteristics
+Domain Type
+
+Sequencer
+
+Selection
+
+Finality
+
+L1 (PoW)
+L1 (PoS)
+Optimistic Rollup
+ZK Rollup
+CEX
+Bridge
+
+Miner
+Validator
+Sequencer operator
+Prover/Sequencer
+Exchange operator
+Relayer/Validator set
+
+Computational race
+Protocol selection
+Centralized/Decentralized
+Centralized
+Centralized
+Varies
+
+Probabilistic
+Deterministic
+Delayed
+ZK-verified
+Instant
+Cross-chain
+
+TABLE II: MEV Strategy Types: Primitives and Composition
+Strategy
+
+Primitive(s)
+
+Mechanism
+
+Key Works
+
+Arbitrage
+Liquidation
+Sandwich
+JIT Liquidity
+Time-bandit
+CEX-DEX
+
+Back-run
+Back-run
+Front-run + Back-run
+Front-run + Back-run
+Reorg
+Back-run (non-atomic)
+
+Exploit price differences post-trade
+Seize collateral after price drop
+Manipulate price around victim
+Provide LP around large swap
+Re-mine blocks for historical MEV
+Cross-venue price exploitation
+
+[21], [22]
+[16]
+[20]
+[23]
+[1]
+[2], [18]
+
+III. E RA I: M INER E XTRACTABLE VALUE
+The first era of MEV research spans from August 2014 to
+August 2020, during which the foundational concepts were
+established in the context of Proof-of-Work Ethereum with a
+public mempool. This era begins with pmcgoohan’s prescient
+warning and concludes with the “Dark Forest” article that
+brought MEV to mainstream attention.
+A. The Birth of MEV: pmcgoohan’s Warning (August 2014)
+The MEV problem was first identified by the pseudonymous
+algorithmic trader pmcgoohan in a Reddit post titled “Miners
+Frontrunning” on August 12, 2014 [24], remarkably one year
+before Ethereum’s mainnet launch. pmcgoohan warned that
+miners could observe pending transactions and insert their own
+transactions before and after a victim’s trade to capture profit,
+describing what we now call a sandwich attack.
+Vitalik Buterin responded directly to this post [24], acknowledging the concern. This early warning established several key insights that would remain central to MEV research:
+(1) miners can reorder, delay, and insert transactions without
+controlling 50% of hashpower; (2) the public mempool creates
+an information asymmetry favoring block producers; and (3)
+this is a fundamental issue, not a bug to be patched.
+B. Pre-Formalization Observations
+Before the formal coining of “MEV,” researchers documented front-running as a concern in blockchain systems.
+Eskandari et al. [12] provided an early systematization of
+front-running attacks, classifying them into three categories:
+displacement (replacing a victim transaction with an attacker’s
+transaction), insertion (inserting transactions around a victim),
+and suppression (preventing transaction inclusion). This taxonomy established that unfair ordering was a practical concern
+across decentralized applications, though without a unified
+economic framework.
+Front-running in blockchain systems mirrors analogous
+practices in traditional finance, where privileged actors exploit
+
+information or timing advantages [9]. However, the transparent
+mempool of public blockchains created unprecedented visibility into pending transactions, democratizing access to frontrunning opportunities while simultaneously exposing users to
+exploitation. As Gramlich et al. noted, “a similar and substantially richer variety of means to gain unethical profit from
+power asymmetries has appeared in the context of blockchainbased decentralized applications.”
+The early DeFi ecosystem provided fertile ground for extraction. Eskandari et al. [12] drew knowledge from the top 25
+most active decentralized applications deployed on Ethereum,
+identifying front-running instances across DEXs, ICOs, and
+other applications. Their analysis of initial coin offerings
+showed evidence of abnormal miner behavior indicative of
+front-running token purchases.
+C. The Flash Boys 2.0 Moment
+The seminal work by Daian et al. [1] introduced “Miner
+Extractable Value” as a formal concept. Through empirical
+analysis of Ethereum’s mempool and on-chain data, they
+demonstrated the existence of Priority Gas Auctions (PGAs),
+competitive bidding wars among bots seeking to capture
+arbitrage opportunities. These auctions consumed block space,
+increased fees for regular users, and created negative externalities for the network.
+Crucially, Daian et al. framed MEV as a consensus-level
+security concern. They introduced the time-bandit attack,
+showing that sufficiently large MEV opportunities could incentivize miners to reorganize the blockchain and re-mine past
+blocks to capture historical value. This linked application-layer
+activity (DeFi trading) to protocol-layer security (consensus
+stability), establishing MEV as a systemic risk rather than
+merely an economic inefficiency.
+The empirical measurements in Flash Boys 2.0 provided a
+conservative lower bound on MEV, identifying over $6 million
+from “pure-revenue” atomic arbitrages. This figure, while
+substantial, represented only a fraction of total extractable
+
+TABLE III: Era I Characteristics
+Characteristic
+
+Description
+
+Consensus
+Central Actor
+Mempool
+MEV Definition
+Primary Concern
+Infrastructure
+Measurement Focus
+Key Strategies
+
+Proof-of-Work
+Miners
+Public, transparent
+Potential value to block producers
+Consensus security threats
+Primitive, gas-based competition
+Lower bounds on atomic arbitrage
+Arbitrage, front-running, PGAs
+
+value, as many strategies were not captured by their detection
+methodology.
+D. Negative Side Effects of MEV
+MEV extraction produces four categories of negative externalities that became increasingly apparent during Era I [20].
+Block congestion (spam) results from the accumulation of
+failed bot transactions, as searchers submit redundant or speculative transactions that ultimately revert but still consume block
+space. High transaction fees arise from priority gas auctions,
+where competing bots bid up gas prices to secure transaction
+ordering, pricing out regular users. Price manipulation occurs
+through front-running and sandwich attacks that extract value
+directly from users’ trades. Consensus instability emerges
+when MEV opportunities become large enough to incentivize
+time-bandit attacks or other forms of chain reorganization.
+Torres et al. [20] empirically documented these effects,
+finding evidence of systematic block stuffing where bots
+deliberately fill blocks to delay competitor transactions. Their
+analysis revealed that front-running activity was not merely
+opportunistic but involved sophisticated strategies to monopolize extraction opportunities.
+E. Characteristics of Era I
+Era I is characterized by several distinctive features summarized in Table III. The consensus mechanism was Proof-ofWork, with miners as the central actors controlling transaction
+ordering. The mempool was public, providing symmetric information access to all participants willing to monitor it. MEV
+was primarily defined as potential value accessible to block
+producers, with limited measurement of realized extraction.
+The emphasis was on threats to consensus security, particularly
+the destabilizing effects of large MEV opportunities.
+The infrastructure during this period was relatively primitive. Searchers competed through gas price bidding in the
+public mempool, leading to inefficient outcomes including
+failed transactions, wasted gas, and network congestion. The
+lack of private communication channels between searchers and
+miners meant that strategies were visible and easily copied.
+F. Early Mitigations
+Initial responses to MEV focused on application-layer defenses. Commit-reveal schemes aimed to hide transaction
+contents until ordering was finalized. Batch auctions proposed
+processing multiple orders simultaneously at uniform prices.
+
+However, these mitigations saw limited adoption during Era I,
+as the infrastructure to support them was underdeveloped and
+the scale of MEV extraction was not yet fully appreciated.
+Bridge to Era II: On August 28, 2020, Dan Robinson and
+Georgios Konstantopoulos of Paradigm published “Ethereum
+is a Dark Forest” [25], bringing MEV to mainstream attention.
+This influential article introduced a powerful metaphor capturing the adversarial nature of Ethereum’s mempool, marking
+the transition to Era II and the generalization from “Miner” to
+“Maximal” Extractable Value.
+IV. E RA II: M AXIMAL E XTRACTABLE VALUE
+Era II spans from August 2020 to April 2024 and is
+characterized by the generalization of MEV concepts, the
+development of formal taxonomies, theoretical models, and the
+industrialization of MEV extraction through Proposer-Builder
+Separation and sophisticated infrastructure. Figure 2 illustrates
+the dramatic transformation of the MEV extraction pipeline
+across these eras, from the simple public mempool model of
+Era I to the complex supply chain that emerged in Era II and
+the cross-chain coordination requirements of Era III.
+A. “Ethereum is a Dark Forest” (August 2020)
+The publication of “Ethereum is a Dark Forest” [25]
+marked the beginning of Era II. Robinson and Konstantopoulos recounted an attempt to rescue funds from a vulnerable
+smart contract, only to have the rescue transaction front-run
+by “generalized front-runners”, i.e., bots that could detect
+and replicate any profitable transaction. This demonstrated
+that: (1) generalized front-runners can exploit any profitable
+transaction, not just known patterns; (2) the mempool is an
+information-transparent environment where “detection means
+certain death”; and (3) private transaction channels were
+needed for sensitive operations.
+A follow-up post, “Escaping the Dark Forest” [26], documented a successful $9.6 million rescue operation using direct
+miner submission via SparkPool. These articles brought MEV
+to widespread attention beyond academic circles.
+B. From Miner to Maximal
+The transition from “Miner Extractable Value” to “Maximal
+Extractable Value” reflected the recognition that extraction
+opportunities were not specific to PoW mining. The renaming, which became the prevailing convention following the
+Flashbots research community’s usage in 2021 (as surveyed by
+Gramlich et al. [9]), captured a fundamental conceptual shift.
+In PoS systems, validators rather than miners control block
+production. In Layer-2 rollups, sequencers determine transaction ordering. The term “maximal” captured the protocolagnostic nature of extractable value: any entity with ordering
+power could potentially capture it.
+This renaming was more than semantic. It shifted the conceptual focus from a specific actor (the miner) to a structural
+property (the ability to extract value through ordering). This
+abstraction enabled analysis of MEV across diverse blockchain
+architectures and anticipated the multi-domain complexity that
+would emerge in Era III.
+
+C. Taxonomies and Systematizations
+Era II produced several comprehensive surveys and systematizations that organized the growing MEV literature.
+Gramlich et al. [9] provided a systematic literature review consolidating divergent definitions and categorizing MEV manifestations. Their work synthesized and reviewed the existing
+state of knowledge, pointing to undiscovered areas relevant to
+the decentralized economy.
+Yang et al. [10] systematized MEV countermeasures, offering a taxonomy of over 30 mitigation approaches spanning
+encryption, sequencing, and economic mechanisms. Their
+framework organized countermeasures into four directions:
+MEV auction platforms, time-based order fairness, contentagnostic ordering, and MEV-aware application design.
+McMenamin [11] produced a systematization specifically
+focused on cross-domain MEV, examining protocols including
+shared sequencers, order-flow auctions, and batch settlements.
+This work identified multiple dimensions for categorizing
+MEV: how value is extracted, where it originates, who controls
+access, where extraction occurs, and how extracted value
+can be redistributed. McMenamin noted that “there are many
+potential categorizations for MEV,” including value-based,
+control-based, and redistribution-based taxonomies.
+D. Formalizations and Models
+Era II also saw the development of formal theoretical
+frameworks for analyzing MEV. Babel et al. [16] introduced
+automated analysis of economic security in smart contracts,
+enabling formal reasoning about extractable value in specific
+protocol contexts. Their Clockwork Finance framework provided tools for automated MEV analysis.
+Obadia et al. [15] formalized cross-domain MEV, defining
+domains, sequencers, and the conditions under which crossdomain extraction exceeds single-domain extraction. Their key
+insight was that “the MEV is the maximum of the sum of final
+balances across all considered domains into a single base asset,
+when some mix of actions across all those domains is executed
+together.”
+Game-theoretic models examined the strategic interactions
+among searchers, block producers, and users. Capponi et
+al. [27] showed that MEV induces inefficient block-space
+allocation; private pools can improve welfare but equilibrium
+adoption is partial because validators forgo rents. These models revealed that competitive MEV extraction could lead to
+inefficient equilibria, with resources wasted on competition
+rather than productive activity.
+Schwarz-Schilling et al. [28] modeled “timing games” in
+PoS, where proposers strategically delay block release within
+a slot to harvest time-dependent MEV while still gathering
+sufficient attestations. They estimated a marginal value of time
+of approximately 0.0065 ETH per second from relay bids.
+E. Realized Extractable Value (May 2021)
+In May 2021, Flashbots published “Quantifying Realized
+Extractable Value” [29], introducing the concept of Realized
+Extractable Value (REV). The key insight was that MEV is
+
+a theoretical quantity that can only be approached asymptotically, unforeseen extraction methods can and will be devised.
+Hence, REV represents the actual value extracted from MEV
+opportunities, where REV ≤ MEV. This distinction became
+crucial for empirical measurement.
+F. Flashbots and Private Mempools
+The emergence of Flashbots in 2021 fundamentally transformed MEV infrastructure [30]. Flashbots introduced private
+transaction submission channels that allowed searchers to
+bypass the public mempool, submitting bundles directly to
+miners (and later, builders). Within five months of deployment,
+mining pools representing over 97% of Ethereum’s hash rate
+had adopted Flashbots’ mev-geth client, reaching 99.9% after
+eight months.
+Weintraub et al. [30] empirically measured MEV extraction
+via Flashbots between blocks 10,000,000 and 14,444,725
+(May 2020 – March 2022). Their analysis revealed several key
+findings. First, profit redistribution occurred: miners earned
+more using Flashbots while searchers earned less, as competition for bundle inclusion intensified. Second, extraction
+shifted to private channels: 48% of sandwich attacks were
+executed via Flashbots rather than the public mempool. Third,
+centralization emerged: 90% of Flashbots blocks were mined
+by just two mining pools, foreshadowing the builder concentration that would characterize the PBS era.
+G. Characteristics of Early Era II
+The early part of Era II retained a focus on potential
+extractable value rather than realized extraction. Research
+asked “what could be extracted?” rather than “what is actually
+extracted?” This emphasis was appropriate for establishing
+theoretical foundations but left empirical questions about actual extraction rates and actor behavior unresolved.
+The period saw growing recognition that MEV was not
+uniformly harmful. Arbitrage contributed to price discovery
+and market efficiency. Liquidations maintained the solvency
+of lending protocols. The challenge was distinguishing valuecreating from value-destroying MEV and designing mechanisms to encourage the former while mitigating the latter.
+H. The Ethereum Merge and MEV-Boost (September 2022)
+Ethereum’s transition to Proof-of-Stake on September 15,
+2022 (“The Merge”) fundamentally changed MEV dynamics.
+Block proposers became known in advance, changing gametheoretic considerations. MEV-Boost was activated 17 epochs
+after the Merge, implementing Proposer-Builder Separation.
+I. Proposer-Builder Separation
+The introduction of Proposer-Builder Separation (PBS)
+through MEV-Boost fundamentally restructured Ethereum’s
+block production [31], [32]. Under PBS, the roles of block
+building (selecting and ordering transactions) and block
+proposing (committing to a block) are separated. Specialized
+builders construct blocks to maximize value, and proposers
+select the highest-paying block through a competitive auction
+
+mediated by relays. As shown in Panel B of Figure 2,
+this created a multi-stage supply chain involving searchers,
+builders, relays, and proposers.
+PBS created a new supply chain for MEV. Searchers identify
+opportunities and submit bundles to builders. Builders aggregate bundles, add their own transactions, and construct complete blocks. Relays facilitate communication between builders
+and proposers while providing trust guarantees. Proposers
+select winning blocks and receive payments from builders.
+Heimbach et al. [32] measured PBS adoption and MEV
+dynamics in the post-Merge era. Within two months of the
+Merge, over 85% of blocks were PBS blocks, with relay
+market share concentrated among a small number of operators. Their analysis of MEV profit distribution showed that
+validators engaging in PBS earned significantly more than
+non-participating validators, with proposers retaining approximately 90% of profits compared to builders. Liquidation,
+sandwich, and arbitrage extraction overwhelmingly occurred
+through PBS blocks.
+Empirical analysis revealed concerning concentration in
+this market. Yang et al. [31] documented that two builders
+produced over 85% of Ethereum blocks, creating centralization
+risks. Oz et al. [33] analyzed builder auction dynamics from
+October 2023 to March 2024, finding that approximately 80%
+of blocks were produced by three builders.
+
+Era I
+
+Public
+mempool
+
+Users
+
+Block
+production
+
+Miners select
+and order
+
+observe
+
+submit
+
+Searchers
+
+(a) Era I, public mempool and miner-controlled ordering.
+On-Chain
+
+Era II
+
+Public
+
+Users
+
+Validators
+
+mempool
+
+Blockchain
+
+txs
+
+observe
+
+O-Chain (PBS)
+
+best block
+
+Searcher 1
+
+bundles
+
+Builder 1
+
+blocks
+
+Relay 1
+
+.
+.
+.
+
+.
+.
+.
+
+.
+.
+.
+
+Searcher n
+
+Builder n
+
+Relay n
+
+b
+
+id
+s
+
+MEV-Boost
+
+(b) Era II, PBS supply chain via builders, relays, and proposers
+(MEV-Boost).
+Blockchain 1
+
+Era III
+
+Searcher
+
+Token 1
+
+DEX
+
+Token 2
+
+Bridge
+Blockchain 2
+transfer
+
+J. Private Order Flow
+Bridge
+
+The proliferation of private transaction submission transformed MEV dynamics. Order Flow Auctions (OFAs) emerged
+as mechanisms for users to capture some of the MEV their
+transactions generate [34]. Services like Flashbots Protect,
+MEV Blocker, Blink, and Merkle route transactions directly
+to builders, bypassing the public mempool.
+Janicot and Vinyas [34] noted that “with the introduction
+of Proof of Stake and Proposer-Builder Separation, the transaction supply chain on Ethereum has shifted from relying
+entirely on the public mempool to an astonishing 80% usage
+of private RPCs.”
+Mancino et al. [35], [36] analyzed transaction ordering in
+the PBS era, uncovering systematic favoritism toward privately
+communicated transactions and hidden payments to builders.
+K. Non-Atomic and Off-Chain MEV
+Era II extended MEV analysis beyond atomic, singletransaction strategies to non-atomic extraction spanning multiple transactions, blocks, or venues [18]. CEX-DEX arbitrage,
+exploiting price differences between centralized and decentralized exchanges, emerged as a major MEV source.
+Heimbach et al. [18] measured non-atomic arbitrage on
+Ethereum DEXs from the Merge through October 2023, finding $132 billion of volume representing nearly 30% of DEX
+trading, with thousands of such trades occurring daily. Wu
+et al. [2] found 233.8 million USD extracted by 19 major
+searchers over 19 months.
+
+Token 2
+
+DEX
+
+Token 1
+
+Searcher
+
+(c) Era III, cross-domain execution and settlement across multiple
+chains (SDA style).
+
+Fig. 2: Evolution of MEV extraction infrastructure. The figure
+compares the transaction flow from miner-dominated ordering
+in Era I, to the PBS architecture in Era II, and to the crosschain of Era III, where execution spans multiple chains.
+
+L. Layer-2 MEV Measurements
+The growth of Layer-2 rollups introduced new MEV dynamics. Bagourd and Francois [6] quantified MEV on Polygon,
+Arbitrum, and Optimism, finding a lower bound of 213 million
+USD on Polygon alone.
+Gogol et al. [37] quantified non-atomic MEV opportunities
+across rollups, identifying over 500,000 unexploited arbitrage
+opportunities that persist on average for 10–20 blocks.
+Bridge to Era III: In April 2024, Torres et al. [7] published
+“Rolling in the Shadows,” the first systematic analysis of MEV
+across Layer-2 rollups, marking the transition to the crosschain era. Their work demonstrated that MEV analysis must
+extend beyond single chains to encompass the multi-domain
+ecosystem.
+V. E RA III: C ROSS -C HAIN MEV
+Era III begins with Torres et al.’s “Rolling in the Shadows”
+(April 2024) and addresses MEV that arises from coordinating
+
+actions across multiple ordering domains. This represents the
+frontier of MEV research and the core focus of this systematization. Figure 3 visualizes the complex attack surface that
+characterizes this era, depicting the interconnections between
+various domains and the MEV extraction paths that span them.
+A. Torres et al.: MEV Across Layer-2 Rollups (April 2024)
+Torres et al. [7] measured MEV across Ethereum and major
+rollups (Arbitrum, Optimism, zkSync) over approximately
+three years, finding that while MEV volumes were comparable to L1, profits and costs were lower, and no traditional
+sandwiching occurred due to the absence of public mempools
+on rollups. Crucially, they designed three cross-layer sandwich
+attacks using L1-emitted transactions targeting L2 trades,
+simulating approximately $2 million potential profit. This
+work marks the formal beginning of Era III by demonstrating
+that MEV extraction fundamentally depends on cross-domain
+coordination.
+
+They compared security, latency, and liveness trade-offs across
+architectures.
+Bridges enable asset transfers between chains through various mechanisms. Notland et al. [40] systematized bridge architectures and vulnerabilities based on 64 bridges, identifying
+13 critical components and 8 vulnerability categories from 31
+exploits and 4 known bugs. Belenkov et al. [41] analyzed
+bridge hacks in 2022-2023, documenting attack patterns including custodian attacks and communicator attacks.
+Li et al. [42] surveyed cross-chain bridge security, cataloging vulnerabilities including smart-contract bugs, oracle
+manipulation, and centralization risks. They documented approximately $2 billion stolen through bridge exploits across
+13 incidents, the majority of which occurred in 2022. Zhao
+et al. [43] provided a structured review decomposing architectures and trust layers, distilling four attack families from real
+incidents.
+
+B. Optimistic MEV on Layer-2
+Solmaz et al. [8] introduced the concept of optimistic MEV,
+i.e., MEV extraction through speculative transaction submission that exploits the unique properties of Layer-2 sequencers.
+Unlike traditional MEV where searchers observe pending
+transactions and react, optimistic MEV involves submitting
+transactions that anticipate profitable opportunities will arise,
+accepting high failure rates in exchange for capturing value
+when opportunities materialize.
+The empirical analysis revealed striking patterns in L2
+blockspace consumption. On Base and Optimism in Q1 2025,
+optimistic MEV contracts, primarily executing cyclic arbitrage, consumed over 50% of on-chain gas while paying less
+than 25% of total transaction fees. This asymmetry arises
+because L2 sequencers typically employ first-come-first-served
+(FCFS) ordering with low base fees, allowing high-volume
+speculative submission at minimal cost per attempt.
+The dominance of optimistic MEV explains why L2
+blockspace demand remains persistently high despite low
+transaction fees. Searchers engage in continuous “polling” of
+the chain state, submitting arbitrage attempts that revert when
+no opportunity exists but succeed when price discrepancies
+arise. This creates a fundamentally different MEV landscape
+from L1: instead of competition through gas price bidding
+(PGAs), L2 MEV competition occurs through transaction
+volume and latency optimization.
+
+D. Definitions of Cross-Domain MEV
+
+C. Foundations: Cross-Chain Communication
+Before defining cross-chain MEV, we must understand
+how chains communicate. Zamyatin et al. [38] provided the
+foundational systematization of cross-chain communication
+protocols, establishing that such communication is impossible
+without trusted third parties. All cross-chain designs involve
+trust assumptions, whether in federated validators, light clients,
+optimistic verification, or cryptographic proofs.
+Deng et al. [39] surveyed cross-chain interoperability,
+classifying designs into notary/relays, HTLC/hashed timelocks, light-client/IBC-style, and shared/sequenced rollups.
+
+E. Empirical Measurement
+
+Obadia et al. [15] provided the first formal definition of
+cross-domain MEV, investigating whether extractable value
+depending on ordering across two or more domains jointly
+exists. They defined the MEV as the maximum of the sum of
+final balances across all considered domains, when some mix
+of actions across those domains is executed together.
+The domain abstraction encompasses Layer-1 blockchains,
+Layer-2 rollups, centralized exchanges, bridge protocols, and
+sequencers. Cross-domain MEV arises when value extraction
+requires coordinated ordering across domains, not merely
+sequential execution within each domain. As illustrated in Figure 3, the edges connecting different domain nodes represent
+potential value-extraction paths, with annotations indicating
+the MEV types possible along each path.
+McMenamin [11] extended this framework by classifying
+cross-domain protocols and the MEV types each enables. The
+protocols analyzed include shared sequencers, multiple singledomain sequencers, order-flow auctions, app-chains, priority
+auctions, slot auctions, batch auctions, encrypted mempools,
+reduced block times, bridges, and off-chain RFQ systems.
+Obadia et al. [15] identified several negative externalities
+of cross-domain MEV: cross-domain sequencer centralization,
+cross-domain time-bandit attacks, and the emergence of supertraders with systematic advantages.
+
+Empirical measurement of cross-chain MEV presents significant challenges. Unlike single-chain analysis, cross-chain detection requires correlating transactions across heterogeneous
+data sources with different schemas, timestamps, and finality
+guarantees.
+Mazor and Rottenstreich [44] presented a framework for
+detecting cross-chain arbitrage between DEXs, analyzing PancakeSwap (BNB Chain) and QuickSwap (Polygon) over one
+month. They reconstructed pool states from factory events,
+modeled CPMM pricing, and searched cyclic paths. They
+
+Centralized Seq.
+
+Centralized Seq.
+
+Arbitrum
+
+Optimism
+
+Bridge
+
+Bridge
+
+Ethereum
+L1
+
+Binance
+Matching Engine
+
+Bridge
+
+PoS Validators
+
+Coinbase
+Matching Engine
+
+Bridge
+
+zkSync
+
+Base
+
+Centralized Seq.
+
+Centralized Seq.
+
+Arbitrage
+Front-running
+Latency exploitation
+
+Fig. 3: Cross-Domain MEV Attack Surface. The graph depicts
+the multi-domain ecosystem where cross-chain MEV operates,
+with nodes representing ordering domains and edges representing value-extraction paths. Edge thickness reflects empirical
+extraction volume, while annotations indicate the types of
+MEV strategies applicable to each path. The visualization
+highlights how sequencer control at different nodes creates
+extraction opportunities spanning the ecosystem.
+
+found numerous unexploited opportunities with cross-chain
+revenues often exceeding single-DEX opportunities.
+Sjursen et al. [45] moved toward quantifying cross-domain
+MEV, building a data-extraction tool spanning multiple EVM
+domains and identifying contracts actively engaging in crossdomain arbitrage.
+Oz et al. [3] conducted the first large-scale study of executed cross-chain arbitrage, introducing Sequence-Independent
+Arbitrage (SIA), where the arbitrageur holds pre-positioned
+capital on multiple chains, and Sequence-Dependent Arbitrage
+(SDA), where assets are moved across chains during execution.
+Analyzing nine blockchains over one year (September 2023 to
+August 2024), they identified 242,535 cross-chain arbitrages
+totaling 868.64 million USD in volume, generating 10.05
+million USD in revenue and 8.65 million USD in net profit.
+Activity clustered on Ethereum-centric L1-L2 pairs, grew by
+5.5× over the study period, and surged after the Dencun
+upgrade (March 13, 2024). Most trades used pre-positioned
+inventory (66.96%) and settled in approximately 9 seconds,
+whereas bridge-based arbitrages (33.04%) took approximately
+242 seconds. Market concentration was high, with the five
+largest addresses executing over half of all trades.
+F. Sequence-Independent vs. Sequence-Dependent Arbitrage
+A key distinction in cross-chain MEV is between sequenceindependent arbitrage (SIA), where the order of execution
+across chains does not affect profitability, and sequencedependent arbitrage (SDA), where specific execution sequences are required [3]. SIA opportunities can be captured
+without coordinated cross-chain ordering, while SDA requires
+precise timing and may involve bridge transactions that introduce latency and risk.
+
+While Oz et al. [3] focused on two-hop arbitrages involving
+pairs of blockchains, Mancino et al. [46] extended the analysis
+to multihop (n-hop) cross-chain arbitrage, where execution
+spans three or more blockchains and is inherently sequencedependent (SDA). Analyzing 12 blockchain networks and 45
+bridges over a dataset of more than 2.4 billion transactions,
+their detection algorithm identified only 10 instances (8 threehop, 2 four-hop) with no five-hop or six-hop arbitrages detected. Execution times averaged 434.1 seconds (7.2 minutes)
+for three-hop and 696.5 seconds (11.6 minutes) for fourhop arbitrages, with only 60% profitability, underscoring the
+additional latency and coordination costs that each extra hop
+introduces.
+G. Negative Externalities
+Cross-domain MEV introduces several negative externalities [15]. Cross-domain sequencer centralization occurs
+when maximizing cross-domain MEV requires controlling
+sequencers across multiple domains, creating pressure toward monopolistic or oligopolistic control. Cross-domain timebandit attacks extend the single-chain time-bandit concept,
+potentially incentivizing coordinated reorganizations across
+chains. Super-traders with cross-domain execution capabilities
+gain systematic advantages over ordinary users.
+The concentration of cross-chain arbitrage activity reinforces these concerns. Oz et al. [3] found that five addresses
+executed over 50% of trades, with one capturing approximately
+40% of daily volume post-Dencun. This concentration suggests barriers to entry and potential for coordinated behavior.
+Landers and Marsh [47] analyzed MEV in Multiple Concurrent Proposer (MCP) blockchains, formalizing novel MEV
+channels including same-tick duplicate steals, proposer-toproposer auctions, and timing races. They noted that “MCP
+chains move MEV from a single builder’s private mempool to
+same-tick inter-block races created by data availability before
+final ordering.”
+H. Speculative MEV and Network Spam
+The absence of public mempools on rollups fundamentally
+changes MEV dynamics, giving rise to speculative MEV, a
+qualitatively different extraction paradigm [7], [8]. In traditional (non-speculative) MEV, searchers monitor the public
+mempool off-chain, identify profitable opportunities, and submit targeted transactions. In speculative MEV (also termed
+optimistic MEV by Solmaz et al. [8]), the searching process
+moves on-chain: bots submit transactions speculatively, hoping
+to capture opportunities as they arise, with many transactions
+reverting when no opportunity exists.
+This distinction has significant implications for network
+efficiency. Speculative MEV generates substantial spam, i.e.,
+transactions that do not change the final state of a block
+when removed. A transaction qualifies as spam if removing
+it from a block does not alter the final state in terms of
+balance and storage. Torres et al. [7] found that Optimism
+exhibits significantly higher levels of speculative arbitrage
+activity compared to Ethereum, with a larger number of both
+
+reverted and non-reverted arbitrage transactions. On average,
+speculative arbitrages proved more profitable but also contributed to significant block congestion.
+The prevalence of speculative MEV on rollups reflects
+their architectural differences from Layer-1. With centralized sequencers operating on first-come-first-served (FCFS)
+ordering and no public mempool for transaction observation,
+searchers cannot employ traditional front-running strategies.
+Instead, they resort to continuous on-chain probing, creating
+a trade-off between extraction efficiency and network spam.
+As documented by Solmaz et al. [8], this behavior explains
+the persistent high demand for L2 blockspace: MEV bots on
+Ethereum’s major private mempools operate predominantly
+through such speculative strategies on L2s, where low fees
+make high-volume polling economically viable.
+
+intent settlement combining Coincidence of Wants with crosschain AMM execution, reporting 26–46% higher completion
+rates than CoW-only baselines.
+Belchior et al. [51] proposed Harmonia, a ZK-based framework for secure cross-chain applications including a decentralized light client and ZK attestations. Belchior et al. [52]
+introduced Hephaestus, a cross-chain model generator for
+monitoring applications and identifying malicious behavior.
+However, as Silva and Livshits [48] demonstrated, atomic
+execution in shared sequencers does not necessarily eliminate
+arbitrage profits and can even induce losses depending on price
+paths and fees. The mitigation landscape remains immature,
+with theory and measurement racing to keep pace with evolving extraction strategies.
+
+I. Cross-Layer Sandwich Attacks
+
+Era III completes the conceptual evolution of MEV. “Miner
+Extractable Value” denoted potential, single-chain, minercentric extraction. “Maximal Extractable Value” generalized
+to any ordering entity while remaining largely focused on
+potential value. “Realized Extractable Value” captured actual
+extraction in practice. “Cross-Chain MEV” represents the
+subset of realized extractable value that fundamentally depends
+on coordinating across multiple domains. We propose Realized
+Cross-Chain Extractable Value (RC-MEV) as the precise term
+for empirically measured cross-domain extraction.
+
+While traditional sandwiching is absent on rollups due
+to private sequencer mempools, Torres et al. [7] identified
+novel cross-layer sandwich attacks that exploit the interaction
+between Layer-1 and Layer-2. These attacks leverage transactions emitted from L1 to L2 via bridge smart contracts, which
+are publicly visible on L1 before reaching the L2 sequencer.
+Three attack strategies were identified. Strategy S1 (Classical Cross-Layer Sandwiching) involves the attacker observing
+an L1-to-L2 swap transaction in the L1 mempool and submitting front-run and back-run transactions through the same
+bridge, sandwiching the victim on L2. Strategy S2 (Hybrid
+Sandwiching) combines L1 bridge transactions for the frontrun with direct L2 submission for the back-run, exploiting the
+latency between L1 emission and L2 inclusion. Strategy S3
+(Speculative Sandwiching) uses the bridge for the front-run but
+speculatively submits back-run transactions on L2, accepting
+potential reverts in exchange for faster execution.
+Empirical validation on testnets confirmed the feasibility of
+all three strategies across Arbitrum, Optimism, and zkSync.
+Mainnet simulations estimated nearly $2 million USD in
+potential profit, with Strategy S3 proving more effective for
+attackers with lower capital requirements. Transaction inclusion delays, averaging 798 seconds on Arbitrum Nitro and
+83 seconds on Optimism post-Bedrock, create the temporal
+windows necessary for these attacks.
+J. Cross-Chain Mitigations
+Era III has seen emerging infrastructure designed to address cross-chain MEV. Shared sequencer designs aim to
+provide atomic execution guarantees across rollups, potentially
+eliminating some cross-domain MEV while creating new
+forms [48]. Han et al. [49] proposed a shared sequencer model
+with multi-slot weighted leader election, PBS-style separation,
+and Fuzzy Cognitive Maps for parameter tuning.
+Order-flow auctions extended to cross-chain contexts could
+redistribute extraction to users. Intent-based protocols abstract
+from specific execution paths, potentially reducing susceptibility to MEV. Shi et al. [50] developed optimization models for
+
+K. Conceptual Closure
+
+VI. T IMELINE AND C ONCEPTUAL TAXONOMY
+This section provides structured representations of the MEV
+literature organized by temporal evolution and conceptual
+dimensions.
+A. Taxonomy of MEV Strategies
+Table IV classifies MEV strategies along three dimensions:
+the ordering primitives exploited (front-running, back-running,
+or both), whether execution is atomic (settled in a single
+transaction or block) or non-atomic, and the domain scope
+(single-chain or cross-chain).
+B. Chronological Overview
+Table V presents a chronological overview of key developments across the three eras. For each period, we identify
+the conceptual shift, representative works, and infrastructure
+changes that characterized the era. This table complements
+Figure 1 by providing detailed citations and descriptions for
+each era’s defining characteristics.
+C. Conceptual Matrix
+Table VI organizes the literature along two dimensions:
+potential versus realized extractable value, and single-domain
+versus cross-domain scope. Each cell contains representative
+citations and brief descriptors.
+D. Representative Key Works by Era
+Table VII summarizes representative works for each era,
+highlighting their key contributions and methodologies.
+
+TABLE IV: Taxonomy of MEV Strategies
+Strategy
+
+Primitive
+
+Atomicity
+
+Scope
+
+DEX-DEX arbitrage
+CEX-DEX arbitrage
+
+Back-run
+Back-run
+
+Atomic
+Non-atomic
+
+Single
+Cross
+
+Cross-chain arbitrage (SIA)
+Cross-chain arbitrage (SDA)
+Sandwich attack
+Cross-layer sandwich
+Liquidation
+JIT liquidity
+
+Back-run
+Back-run
+Both
+Both
+Back-run
+Both
+
+Non-atomic
+Non-atomic
+Atomic
+Non-atomic
+Atomic
+Atomic
+
+Time-bandit
+
+–
+
+Non-atomic
+
+Description
+
+Cyclic swaps across pools in one transaction [21]
+Price alignment between off-chain and on-chain
+venues [2], [18]
+Cross
+Pre-positioned inventory on multiple chains [3]
+Cross
+Bridge-mediated sequential execution [3], [46]
+Single
+Front-run + back-run wrapping a victim swap [20]
+Cross
+Speculative sandwich exploiting L2 sequencer delays [7]
+Single
+Collateral seizure triggered by price movement [16]
+Single
+Concentrated LP added before and removed after a target
+swap [23]
+Single/Cross Chain reorganization to capture historical MEV [1]
+
+TABLE V: Timeline of MEV Evolution
+Period
+
+Conceptual Shift
+
+Representative Works
+
+Infrastructure Changes
+
+Aug 2014 – Aug
+2020 (Era I)
+
+Miner
+Extractable
+Value;
+MEV
+as
+consensus threat
+
+pmcgoohan [24], Eskandari et al. [12],
+Daian et al. [1]
+
+Public mempool, PGAs, early arbitrage
+bots, gas-based competition
+
+Aug 2020 – Apr
+2024 (Era II)
+
+Maximal Extractable
+Value; REV; PBS
+industrialization
+
+Robinson & Konstantopoulos [25],
+Salles [29], Obadia et al. [15], Yang
+et al. [31], Wu et al. [2]
+
+Flashbots, MEV-Boost, relays, private
+order flow, OFAs, L2 sequencers
+
+Apr 2024 –
+present (Era III)
+
+Cross-Chain
+multi-domain
+coordination
+
+Torres et al. [7], Oz et al. [3], Mancino
+et al. [46]
+
+Bridges, shared sequencers, intent protocols, ZK proofs
+
+TABLE VI: Conceptual
+Single/Cross-Domain
+
+Potential
+
+Realized
+
+Matrix:
+
+MEV;
+
+Potential/Realized
+
+Single-Domain
+
+Cross-Domain
+
+Theoretical bounds,
+optimal
+strategies,
+formal
+verification
+[1], [16], [17]
+
+Cross-domain
+optima,
+collusion
+analysis, sequencer
+incentives [11], [15],
+[47]
+
+Empirical extraction,
+builder profits, CEXDEX measurement
+[2], [18], [31]
+
+SIA/SDA detection,
+multihop
+paths,
+bridge arbitrage [3],
+[46], [53]
+
+×
+
+VII. M ITIGATIONS AND D ESIGN S PACE
+Each era of MEV evolution has motivated corresponding
+defenses. We organize mitigations by the era in which the underlying mechanism class became salient, noting that several
+systems level instantiations appeared later as the ecosystem
+matured.
+A. Era I Mitigations
+Early mitigations primarily targeted content based exploitation and simple ordering advantages by reducing actionable
+information at submission time.
+Commit-reveal requires users to publish a commitment first,
+then reveal the transaction content later, reducing content
+based front running during the commitment phase. Breidenbach et al. [54] introduce Submarine Commitments, a commit-
+
+reveal style countermeasure that temporarily conceals transactions on blockchains. In practice, commit-reveal introduces an
+additional round and therefore latency, it can worsen UX, and
+it must handle timeouts and reveal censorship.
+B. Era II Mitigations
+Era II expanded the design space with cryptographic, protocol, and application level mechanisms that aim to blind block
+producers, constrain ordering, or reshape incentive compatibility.
+Encrypted mempools use threshold or delay encryption to
+hide transaction contents from block producers until ordering
+is finalized [55]–[57]. These approaches can reduce content
+based MEV, but introduce key management and decryption
+availability assumptions, and may impose latency or throughput overheads.
+Kavousi et al. [55] propose BlindPerm, combining encrypted submission with randomized permutation to mitigate
+producer side MEV, reporting reductions in arbitrage and
+sandwich extractability in simulation on historical data.
+Fernando et al. [56] present TrX, integrating encrypted
+mempools with a BFT style setting, emphasizing low added
+latency via batched threshold encryption.
+Chakrabarti et al. [57] propose Silent Threshold Traitor
+Tracing, adding public accountability to threshold encryption
+for mempool privacy.
+Fair ordering protocols aim to constrain ordering according
+to timing or fairness notions rather than pure fee priority.
+Achieving meaningful fairness guarantees remains challenging
+
+TABLE VII: Representative Key Works by Era
+Work
+
+Era
+
+Type
+
+Key Contribution
+
+Methodology
+
+Daian et al. [1]
+Eskandari et al. [12]
+Torres et al. [20]
+
+I
+I
+I
+
+Empirical
+SoK
+Empirical
+
+MEV formalization, PGAs, time bandit
+Front running taxonomy
+Large scale front running measurement
+
+Mempool analysis, on chain data
+DApp analysis, case studies
+11M plus blocks, $18.41M profit
+
+Obadia et al. [15]
+
+II
+
+Formal
+
+Mathematical formalization
+
+Gramlich et al. [9]
+
+II
+
+Survey
+
+Yang et al. [10]
+Yang et al. [31]
+
+II
+II
+
+SoK
+Empirical
+
+Cross domain MEV definition, domain abstraction
+MEV categorization, definitions, open problems
+Countermeasure taxonomy
+PBS builder market concentration
+
+Torres et al. [7]
+
+III
+
+Empirical
+
+Oz et al. [3]
+
+III
+
+Empirical
+
+Mancino et al. [46]
+
+III
+
+Empirical
+
+Solmaz et al. [8]
+
+III
+
+Empirical
+
+MEV across L2s, cross-layer attacks, speculative MEV
+SIA and SDA cross-chain arbitrage at scale
+Multihop cross-chain arbitrage rarity and execution costs
+Optimistic, speculative MEV on L2, gas and
+spam dynamics
+
+under network delays and adversarial message scheduling [58].
+Alipanahloo et al. [58] survey MEV mitigations across
+Ethereum and L2s, including fairness oriented approaches,
+and highlight the assumptions required for enforceable fairness
+definitions.
+Batch auctions and batch based exchanges reduce within
+batch ordering advantages by collecting orders over an interval
+and settling them at a uniform clearing price. McMenamin
+et al. [59] propose FairTraDEX, a frequent batch auction
+based DEX that targets extractable value, including detailed
+Solidity and pseudo code designs. Batch based approaches can
+reduce certain ordering attacks, but introduce market structure
+complexity, additional latency, and adoption constraints that
+depend on liquidity concentration and integration into wallets,
+aggregators, and routing infrastructure.
+C. Era II Mitigations, Post Merge
+With the post Merge transaction supply chain dominated
+by PBS style pipelines, mitigations also shifted toward market
+design and revenue routing.
+PBS separates block proposing from block building, limiting proposer side manipulation while shifting influence to
+builders and relays. Empirical analyses report substantial
+builder concentration and discuss its implications for decentralization [31].
+Order flow auctions redistribute value by auctioning back
+run rights or by controlling information disclosure for
+searchers and solvers [34], [60]. Passerat Palmbach and
+Wadhwa [60] propose differentially private aggregate hints,
+enabling users to reason about privacy loss when sharing
+information.
+MEV aware application design modifies DeFi protocols to
+reduce extractability or to share extracted value. Braga et
+al. [61] propose protocol level MEV sharing via a dynamically
+adjusted extraction rate. Batch trading AMM designs can be
+viewed as application level instantiations of batch settlement
+
+Systematic literature review
+30 plus approaches analyzed
+Market structure analysis
+Multi rollup measurement, attack design and simulation
+9 chains, 1 year panel, profit and latency analysis
+12 chains, 45 bridges, 2.4B tx, graph
+correlation heuristics
+On chain contract level measurement
+on rollups
+
+ideas, for example FM AMMs [62]. These approaches tend to
+be protocol specific and face integration and adoption barriers.
+D. Era III Mitigations, Cross-Chain
+Cross-chain MEV introduces asynchronous settlement,
+bridging latency, and fragmented liquidity, so defenses remain
+nascent.
+Shared sequencer designs attempt to coordinate ordering
+across rollups, enabling stronger cross rollup guarantees in
+principle [49]. Silva and Livshits [48] argue that atomicity
+alone does not eliminate arbitrage incentives.
+Intent based protocols abstract execution away from explicit
+transaction paths, allowing solvers to compete to satisfy user
+intents [50]. This can reduce some path based exploitation, but
+introduces solver market dynamics and potential censorship
+risks.
+ZK based bridges aim to reduce trust assumptions via
+cryptographic verification, potentially limiting some cross
+domain failure modes at the cost of prover complexity and
+computational overhead [51].
+Watts et al. [63] propose failure cost mechanisms for
+permissionless order flow auctions, penalizing solvers whose
+bids fail to execute, with extensions relevant to cross domain
+intents. Agrawal and Ribeiro [64] introduce Timelock Shield,
+combining VDF based timelock encryption with delayed execution to counter MEV and censorship.
+Table VIII summarizes mitigations by era and mechanism
+type.
+E. Mitigation Trade offs
+All mitigations involve trade offs. Encryption adds key
+management and availability assumptions, fair ordering relies
+on synchronization and network assumptions, PBS shifts centralization pressure to builders, shared sequencing can introduce new coordination hubs, intents depend on competitive
+solver markets, and cross domain settings add latency and trust
+
+TABLE VIII: MEV Mitigations by Era and Mechanism
+Era Mechanism
+
+Description
+
+Key Works
+
+Limitations
+
+I
+
+Commit reveal
+
+Hide tx contents until ordered
+
+Breidenbach et al. [54]
+
+Latency, UX friction
+
+II
+
+Encrypted
+mempool
+Fair ordering
+
+Threshold or delay encryption
+
+[55]–[57]
+
+Key management, latency
+
+Time based ordering constraints
+
+Alipanahloo [58]
+
+Batch auctions
+PBS
+OFAs
+App design
+
+Uniform clearing prices
+Separate building and proposing
+Auction backrun rights
+MEV resistant protocol design
+
+McMenamin et al. [59]
+Yang [31]
+Janicot [34], Passerat [60]
+Braga [61], Canidio [62]
+
+Synchronization
+assumptions
+Complexity, adoption
+Builder centralization
+Searcher concentration
+Protocol specific
+
+Shared sequencer
+Intents
+ZK bridges
+Failure costs
+Timelock shield
+
+Atomic cross rollup execution
+Solver mediated execution
+Verifiable cross chain bridging
+Penalize failed bids
+Timelock encryption plus delayed execution
+
+Han [49], Silva [48]
+Shi [50]
+Belchior [51]
+Watts [63]
+Agrawal [64]
+
+New centralization
+Solver competition
+Computational cost
+Design complexity
+Added delay
+
+III
+
+surface via bridges. The design space remains open, especially
+for cross domain contexts.
+VIII. O PEN P ROBLEMS AND R ESEARCH AGENDA
+Our systematization reveals several open problems and
+directions for future research.
+A. Standardized Metrics
+The field lacks standardized metrics for MEV measurement. Different studies use incompatible definitions, detection
+methodologies, and data sources, making comparison difficult.
+Chi et al. [19] demonstrated how methodological choices
+significantly affect MEV estimates. We call for community
+effort to establish benchmark datasets, standardized detection
+algorithms, and agreed-upon metrics for potential and realized
+MEV, both single-domain and cross-domain.
+B. Cross-Domain Detection
+Detecting cross-chain MEV requires correlating transactions
+across heterogeneous data sources. Current approaches rely
+on heuristics that may miss complex strategies or produce
+false positives. Mancino et al. [46] noted the extreme scarcity
+of multihop opportunities, finding only 10 instances from
+2.4 billion transactions. Formal frameworks for cross-domain
+transaction correlation, possibly leveraging graph-based methods or machine learning, represent an important research
+direction.
+Seoev et al. [65] proposed reinforcement learning frameworks for MEV extraction, suggesting that advanced ML
+techniques may be applicable to detection as well as extraction.
+C. Sequencer Incentives
+As rollups proliferate, understanding sequencer incentives
+becomes critical. How do sequencer designs affect MEV
+extraction and redistribution? What are the centralization pressures from cross-domain MEV on shared sequencer architectures? Game-theoretic analysis of sequencer competition and
+collusion remains under-developed.
+
+Landers and Marsh [47] began addressing these questions
+for MCP blockchains, but comprehensive models for heterogeneous multi-chain environments are lacking.
+D. Welfare Analysis
+The welfare implications of cross-domain MEV are unclear.
+While arbitrage contributes to price alignment [66], other
+extraction strategies may represent pure transfers or create negative externalities. Capponi et al. [27] showed MEV induces
+inefficient block-space allocation. Rigorous welfare analysis
+distinguishing value-creating from value-destroying MEV in
+cross-chain contexts would inform protocol design.
+Castillo León and Lehar [67] surveyed empirical DeFi
+literature, documenting arbitrage frictions and cross-market
+segmentation that affect welfare analysis.
+E. Bridge Security and MEV
+Bridge vulnerabilities have resulted in billions of dollars in
+losses [40]–[42]. The interaction between bridge security and
+MEV extraction is under-explored. Do MEV incentives create
+pressure toward less secure bridge designs? Can MEV-aware
+bridge architecture improve security?
+Yan et al. [68] conducted large-scale measurement of crosschain bridges, quantifying costs and documenting ledger inconsistencies, providing data for security-MEV interaction
+analysis.
+F. Regulatory Implications
+As Ji and Grimmelmann [69] discuss, MEV raises regulatory questions about market manipulation, fairness, and
+disclosure. They proposed an “intent-respecting” test: liability
+arises when actors profit by routing or ordering contrary to
+user intent.
+The European Securities and Markets Authority [70] synthesized MEV concepts and market impacts, noting that “existing countermeasures are judged incomplete” and calling for
+continued supervisory attention.
+Cross-chain MEV complicates regulatory analysis by spanning multiple jurisdictions and potentially involving both decentralized and centralized venues.
+
+G. Network-Level Attacks
+Doumanidis and Apostolaki [71] studied routing attacks on
+Ethereum PoS, revealing strong network centralization with
+approximately 60% of validators in just 100 IP prefixes. They
+proposed attacks yielding up to +71.4% proposer rewards,
+highlighting infrastructure vulnerabilities that interact with
+MEV incentives.
+Bayan et al. [72] provided comprehensive analysis of
+privacy challenges in permissionless blockchains, examining
+threats including MEV extraction and signature vulnerabilities.
+IX. C ONCLUSION
+This Systematization of Knowledge has traced the evolution
+of Maximal Extractable Value through three distinct eras. Era I
+(August 2014 – August 2020) established MEV as an ordering
+problem in single PoW chains, from pmcgoohan’s prescient
+warning through the “Dark Forest” recognition, identifying it
+as a threat to consensus security. Era II (August 2020 – April
+2024) generalized MEV to any ordering entity, encompassing
+Realized Extractable Value, Proposer-Builder Separation, the
+Ethereum Merge, MEV-Boost, and non-atomic CEX-DEX arbitrage, documenting the industrialization of extraction. Era III
+(April 2024 – present), initiated by Torres et al.’s Layer-2 analysis, extended the field to cross-chain contexts, where value
+extraction depends on coordinating actions across multiple
+domains.
+The relevant unit of analysis is no longer a single
+chain but the multi-domain ecosystem encompassing Layer-1
+blockchains, Layer-2 rollups, centralized exchanges, bridges,
+and sequencers. Cross-domain MEV represents both a frontier
+for extraction strategies and a challenge for mitigation design.
+Theory and measurement are racing to catch up with an
+evolving landscape.
+Our systematization provides researchers and practitioners
+with a unified framework for understanding MEV’s past and
+present. The open problems we identify, spanning standardized
+metrics, cross-domain detection, sequencer incentives, welfare
+analysis, bridge security, and regulatory implications, constitute a research agenda for the field. As blockchain ecosystems
+continue to grow in complexity, understanding and managing
+extractable value will remain central to achieving the goals of
+decentralization, fairness, and security.
+R EFERENCES
+[1] P. Daian, S. Goldfeder, T. Kell, Y. Li, X. Zhao, I. Bentov, L. Breidenbach,
+and A. Juels, “Flash boys 2.0: Frontrunning, transaction reordering,
+and consensus instability in decentralized exchanges,” in 2020 IEEE
+Symposium on Security and Privacy (SP), 2020, pp. 910–927.
+[2] F. Wu, D. Sui, T. Thiery, and M. Pai, “Measuring CEX-DEX extracted
+value and searcher profitability: The darkest of the MEV dark forest,”
+arXiv preprint arXiv:2507.13023, 2025, accepted at the 7th Conference
+on Advances in Financial Technologies (AFT 2025).
+[3] B. Öz, C. F. Torres, C. Schlegel, B. Mazorra, J. Gebele, F. Rezabek,
+and F. Matthes, “Cross-chain arbitrage: The next frontier of MEV in
+decentralized finance,” arXiv preprint arXiv:2501.17335, 2025.
+[4] B. Öz, F. Rezabek, J. Gebele, F. Hoops, and F. Matthes, “A study of
+MEV extraction techniques on a first-come-first-served blockchain,” in
+Proceedings of the 39th ACM/SIGAPP Symposium on Applied Computing, 2024, pp. 288–297.
+
+[5] D. Vostrikov, Y. Madhwal, A. Seoev, A. Smirnova, Y. Yanovich,
+A. Smirnov, and V. Gorgadze, “Unpacking maximum extractable
+value on Polygon: A study on atomic arbitrage,” arXiv preprint
+arXiv:2508.21473, 2025.
+[6] A. Bagourd and L. G. Francois, “Quantifying MEV on layer 2 networks,”
+arXiv preprint arXiv:2309.00629, 2023.
+[7] C. F. Torres, S. Mamuti, B. Weintraub, C. Nita-Rotaru, and S. Shinde,
+“Rolling in the shadows: Analyzing the extraction of MEV across layer2 rollups,” arXiv preprint arXiv:2405.00138, 2024.
+[8] O. Solmaz, L. Heimbach, Y. Vonlanthen, and R. Wattenhofer, “Optimistic MEV in Ethereum layer 2s: Why blockspace is always in
+demand,” arXiv preprint arXiv:2506.14768, 2025.
+[9] V. Gramlich, D. Jelito, and J. Sedlmeir, “Maximal extractable value:
+Current understanding, categorization, and open research questions,”
+Electronic Markets, vol. 34, p. 49, 2024.
+[10] S. Yang, F. Zhang, K. Huang, X. Chen, Y. Yang, and F. Zhu,
+“SoK: MEV countermeasures: Theory and practice,” arXiv preprint
+arXiv:2212.05111, 2023.
+[11] C. McMenamin, “SoK: Cross-domain MEV,” arXiv preprint
+arXiv:2308.04159, 2023.
+[12] S. Eskandari, S. Moosavi, and J. Clark, “SoK: Transparent dishonesty:
+Front-running attacks on blockchain,” in Financial Cryptography and
+Data Security Workshops (FC 2019), ser. Lecture Notes in Computer
+Science, vol. 11598. Springer, 2019, pp. 170–189.
+[13] M. Brolley and M. Zoican, “On-demand fast trading on decentralized
+exchanges,” Finance Research Letters, vol. 51, p. 103350, 2023.
+[14] K. John, B. Monnot, P. Mueller, F. Saleh, and C. Schwarz-Schilling,
+“Economics of Ethereum,” Journal of Corporate Finance, vol. 91, p.
+102718, 2025.
+[15] A. Obadia, A. Salles, L. Sankar, T. Chitra, V. Chellani, and P. Daian,
+“Unity is strength: A formalization of cross-domain maximal extractable
+value,” arXiv preprint arXiv:2112.01472, 2021.
+[16] K. Babel, P. Daian, M. Kelkar, and A. Juels, “Clockwork finance:
+Automated analysis of economic security in smart contracts,” in 2023
+IEEE Symposium on Security and Privacy (SP), 2023, pp. 2499–2516.
+[17] M. Bartoletti, R. Marchesin, and R. Zunino, “Certifying optimal MEV
+strategies with Lean,” arXiv preprint arXiv:2510.14480, 2025.
+[18] L. Heimbach, V. Pahari, and E. Schertenleib, “Non-atomic arbitrage in
+decentralized finance,” arXiv preprint arXiv:2401.01622, 2024.
+[19] T. Chi, N. He, X. Hu, and H. Wang, “Remeasuring the arbitrage and
+sandwich attacks of maximal extractable value in Ethereum,” arXiv
+preprint arXiv:2405.17944, 2024.
+[20] C. F. Torres, R. Camino, and R. State, “Frontrunner jones and the raiders
+of the dark forest: An empirical study of frontrunning on the Ethereum
+blockchain,” in 30th USENIX Security Symposium (USENIX Security
+21), 2021, pp. 1343–1359.
+[21] Y. Wang, Y. Chen, H. Wu, L. Zhou, S. Deng, and R. Wattenhofer, “Cyclic
+arbitrage in decentralized exchanges,” in Companion Proceedings of the
+Web Conference 2022, 2022, pp. 12–19.
+[22] R. McLaughlin, C. Kruegel, and G. Vigna, “A large scale study of the
+Ethereum arbitrage ecosystem,” in Proceedings of the 32nd USENIX
+Conference on Security Symposium, 2023.
+[23] D. M. Di Nosse, F. Gatta, F. Lillo, and S. Jaimungal, “Deviations
+from tradition: Stylized facts in the era of DeFi,” arXiv preprint
+arXiv:2510.22834, 2025.
+[24] pmcgoohan, “Miners frontrunning,” Reddit r/ethereum, August 2014,
+available at https://www.reddit.com/r/ethereum/comments/2d84yv/
+miners frontrunning/, accessed 2026-02-25.
+[25] D. Robinson and G. Konstantopoulos, “Ethereum is a dark forest,”
+Paradigm Blog, August 2020, available at https://www.paradigm.xyz/
+2020/08/ethereum-is-a-dark-forest, accessed 2026-02-25.
+[26] samczsun, “Escaping the dark forest,” Blog, September 2020, available
+at https://samczsun.com/escaping-the-dark-forest/, accessed 2026-0225.
+[27] A. Capponi, R. Jia, and K. Y. Wang, “Maximal extractable value and
+allocative inefficiencies in public blockchains,” Journal of Financial
+Economics, vol. 172, p. 104132, 2025.
+[28] C. Schwarz-Schilling, F. Saleh, T. Thiery, J. Pan, N. Shah, and B. Monnot, “Time is money: Strategic timing games in proof-of-stake protocols,” arXiv preprint arXiv:2305.09032, 2023.
+[29] A. Salles, “Quantifying realized extractable value,” Flashbots Writings,
+May 2021, available at https://writings.flashbots.net/quantifying-rev, accessed 2026-02-25.
+
+[30] B. Weintraub, C. F. Torres, C. Nita-Rotaru, and R. State, “A flash(bot)
+in the pan: Measuring maximal extractable value in private pools,” in
+Proceedings of the 22nd ACM Internet Measurement Conference (IMC
+’22), 2022, pp. 458–471.
+[31] S. Yang, K. Nayak, and F. Zhang, “Decentralization of Ethereum’s
+builder market,” in 2025 IEEE Symposium on Security and Privacy (SP),
+2025, pp. 1512–1530.
+[32] L. Heimbach, L. Kiffer, C. F. Torres, and R. Wattenhofer, “Ethereum’s
+proposer-builder separation: Promises and realities,” in Proceedings of
+the 2023 ACM Internet Measurement Conference (IMC ’23), 2023, pp.
+406–420.
+[33] B. Öz, D. Sui, T. Thiery, and F. Matthes, “Who wins Ethereum block
+building auctions and why?” in 6th Conference on Advances in Financial
+Technologies (AFT 2024), 2024.
+[34] P. Janicot and A. Vinyas, “Private MEV protection RPCs: Benchmark
+study,” arXiv preprint arXiv:2505.19708, 2025.
+[35] D. Mancino, A. Leporati, M. Viviani, and G. Denaro, “A role and
+reward analysis in off-chain mechanisms for executing MEV strategies
+in Ethereum proof-of-stake,” Distributed Ledger Technologies: Research
+and Practice, vol. 4, no. 3, p. 26, 2025.
+[36] Mancino, Davide and Leporati, Alberto and Viviani, Marco and Denaro,
+Giovanni, “Decentralization or favoritism? an analysis of ethereum
+transactions and maximal extractable value strategies,” in 2025 IEEE
+International Conference on Blockchain and Cryptocurrency (ICBC),
+2025, pp. 1–9.
+[37] K. Gogol, J. Messias, D. Miori, C. Tessone, and B. Livshits, “Crossrollup MEV: Non-atomic arbitrage across L2 blockchains,” arXiv
+preprint arXiv:2406.02172, 2024.
+[38] A. Zamyatin, M. Al-Bassam, D. Zindros, E. Kokoris-Kogias, P. MorenoSanchez, A. Kiayias, and W. J. Knottenbelt, “SoK: Communication
+across distributed ledgers,” in Financial Cryptography and Data Security, 2021.
+[39] Z. Deng, C. Tang, T. Li, P. Abla, Q. Chen, W. Liang, and D. He,
+“Enhancing blockchain cross chain interoperability: A comprehensive
+survey,” arXiv preprint arXiv:2505.04934, 2025.
+[40] J. S. Notland, J. Li, M. Nowostawski, and P. H. Haro, “SoK: Crosschain bridging architectural design flaws and mitigations,” Blockchain:
+Research and Applications, p. 100315, 2025.
+[41] N. Belenkov, V. Callens, A. Murashkin, K. Bak, M. Derka, J. Gorzny,
+and S.-S. Lee, “SoK: A review of cross-chain bridge hacks in 2023,”
+arXiv preprint arXiv:2501.03423, 2025.
+[42] N. Li, M. Qi, Z. Xu, X. Zhu, W. Zhou, S. Wen, and Y. Xiang,
+“Blockchain cross-chain bridge security: Challenges, solutions, and
+future outlook,” ACM Distributed Ledger Technologies, vol. 4, no. 1,
+p. 8, 2025.
+[43] Q. Zhao, Y. Wang, B. Yang et al., “A comprehensive overview of security
+vulnerability penetration methods in blockchain cross-chain bridges,”
+Authorea, 2023.
+[44] O. Mazor and O. Rottenstreich, “An empirical study of cross-chain
+arbitrage in decentralized exchanges,” in 2024 16th International Conference on COMmunication Systems & NETworkS (COMSNETS), 2024,
+pp. 488–496.
+[45] J. Sjursen, W. Meng, and W. Chiu, “Towards quantifying cross-domain
+maximal extractable value for blockchain decentralisation,” in Information and Communications Security (ICICS 2023), ser. Lecture Notes in
+Computer Science, vol. 14252. Springer, 2023.
+[46] D. Mancino, H. O. Sevim, and O. S. Gonzalez, “Bunny hops and
+blockchain stops: Cross-chain MEV detection with N-hops,” arXiv
+preprint arXiv:2511.17527, 2025.
+[47] S. Landers and B. Marsh, “MEV in multiple concurrent proposer
+blockchains,” arXiv preprint arXiv:2511.13080, 2025.
+[48] M. I. Silva and B. Livshits, “Short paper: Atomic execution is not enough
+for arbitrage profit extraction in shared sequencers,” arXiv preprint
+arXiv:2410.11552, 2025.
+[49] H. Han, M. Wang, F. Yang, L. Jia, Y. Sun, and R. Zhang, “A layer-2 expansion shared sequencer model for blockchain scalability,” Blockchain:
+Research and Applications, p. 100292, 2025.
+[50] Z. Shi, S. Sweck, and O. Zaki, “From CoWs to multi-chain AMMs:
+A strategic optimization model for enhancing solvers,” in 2024 IEEE
+International Conference on Blockchain (Blockchain), 2024, pp. 97–104.
+[51] R. Belchior, D. Dimov, Z. Karadjov et al., “Harmonia: Securing crosschain applications using zero-knowledge proofs,” TechRxiv, 2023.
+[52] R. Belchior, P. Somogyvari, J. Pfannschmidt, A. Vasconcelos, and
+M. Correia, “Hephaestus: Modeling, analysis, and performance eval-
+
+uation of cross-chain transactions,” IEEE Transactions on Reliability,
+vol. 73, no. 2, pp. 1132–1146, 2024.
+[53] M. Muradli, “Detection and analysis of cross-chain arbitrages between
+Ethereum and Polygon,” Master’s thesis, Technical University of Munich, 2024.
+[54] L. Breidenbach, P. Daian, F. Tramèr, and A. Juels, “Enter the
+hydra: Towards principled bug bounties and Exploit-Resistant
+smart contracts,” in 27th USENIX Security Symposium (USENIX
+Security 18). Baltimore, MD: USENIX Association, Aug. 2018,
+pp. 1335–1352. [Online]. Available: https://www.usenix.org/conference/
+usenixsecurity18/presentation/breindenbach
+[55] A. Kavousi, D. V. Le, P. Jovanovic, and G. Danezis, “BlindPerm:
+Efficient MEV mitigation with an encrypted mempool and permutation,”
+Cryptology ePrint Archive, Paper 2023/1061, 2023.
+[56] R. Fernando, G.-V. Policharla, A. Tonkikh, and Z. Xiang, “TrX: Encrypted mempools in high performance BFT protocols,” Cryptology
+ePrint Archive, Paper 2025/2032, 2025.
+[57] A. Chakrabarti, M. Maitra, A. Mondal, and K. Sehgal, “Silent threshold
+traitor tracing & enhancing mempool privacy,” in Proceedings of the
+2025 ACM SIGSAC Conference on Computer and Communications
+Security (CCS ’25), 2025, pp. 1769–1783.
+[58] Z. Alipanahloo, A. S. Hafid, and K. Zhang, “Maximum extractable
+value (MEV) mitigation approaches in Ethereum and layer-2 chains:
+A comprehensive survey,” IEEE Access, vol. 12, pp. 185 212–185 231,
+2024.
+[59] C. McMenamin, V. Daza, M. Fitzi, and P. O’Donoghue, “Fairtradex:
+A decentralised exchange preventing value extraction,” in Proceedings
+of the 2022 ACM CCS Workshop on Decentralized Finance
+and Security, ser. DeFi’22. New York, NY, USA: Association
+for Computing Machinery, 2022, p. 39–46. [Online]. Available:
+https://doi.org/10.1145/3560832.3563439
+[60] J. Passerat-Palmbach and S. Wadhwa, “Differentially private aggregate
+hints in MEV-Share,” arXiv preprint arXiv:2508.14284, 2025.
+[61] P. Braga, G. Chionas, P. Krysta, S. Leonardos, G. Piliouras, and
+C. Ventre, “Mev sharing with dynamic extraction rates,” in Proceedings
+of the Workshop on Decentralized Finance and Security, ser. DeFi ’24.
+New York, NY, USA: Association for Computing Machinery, 2024, p.
+1–10. [Online]. Available: https://doi.org/10.1145/3689931.3694910
+[62] A. Canidio and R. Fritsch, “Arbitrageurs’ profits, LVR, and sandwich
+attacks: batch trading as an AMM design response,” arXiv preprint
+arXiv:2307.02074, 2025.
+[63] A. Watts, D. Sinesi, and J. Greene, “Using “failure costs” to guarantee
+execution quality in competitive and permissionless order flow auctions,”
+arXiv preprint arXiv:2503.05338, 2025.
+[64] S. Agrawal and V. J. Ribeiro, “Timelock shield: A robust defense against
+MEV and censorship attacks in blockchain,” in 2025 Crypto Valley
+Conference (CVC), 2025, pp. 127–137.
+[65] A. Seoev, L. Gremyachikh, A. Smirnova et al., “The bidding games:
+Reinforcement learning for MEV extraction on Polygon blockchain,”
+arXiv preprint arXiv:2510.14642, 2025.
+[66] K. John, J. Li, and R. Liu, “Pricing and arbitrage across 80 cryptocurrency exchanges,” SSRN Working Paper, 2024, available at SSRN:
+https://ssrn.com/abstract=4816710.
+[67] J. C. León and A. Lehar, “What data have told us about decentralized
+finance,” Journal of Corporate Finance, p. 102916, 2025.
+[68] K. Yan, B. Lu, P. Agrawal, J. Li, W. Diao, and X. Zhang, “An empirical
+study on cross-chain transactions: Costs, inconsistencies, and activities,”
+in Proceedings of the ASIA CCS ’25 Conference, 2025, pp. 939–954.
+[69] Y. Ji and J. Grimmelmann, “Regulatory implications of MEV mitigations,” Cornell Legal Studies Research, vol. 26, no. 7, 2024, available
+at SSRN: https://ssrn.com/abstract=4831566.
+[70] European Securities and Markets Authority, “Maximal extractable
+value implications for crypto markets,” ESMA, Tech. Rep. ESMA50481369926-29744, 2025.
+[71] C. Doumanidis and M. Apostolaki, “Routing attacks in Ethereum PoS:
+A systematic exploration,” arXiv preprint arXiv:2505.07713, 2025.
+[72] T. Bayan, A. Yazici, and R. Banach, “Permissionless blockchain recent
+trends, privacy concerns, potential solutions and secure development
+lifecycle,” Future Internet, vol. 17, no. 12, p. 547, 2025.
+
+
